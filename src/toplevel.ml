@@ -23,7 +23,8 @@ let do_load env t =
     let res = 
       (try 
         while true do
-          ignore (Term.eval_c !Term.current_env (read ()));
+          let term = Term.compile !Term.current_env (read ()) in
+          ignore (Term.eval_c !Term.current_env term);
         done;
         Term.NIL
       with 
@@ -43,7 +44,7 @@ let toplevel () =
     print_newline ();
     print_string ((Env.env_name !Term.current_env)^"> ");
     flush stdout;
-    let term = read () in
+    let term = Term.compile (!Term.current_env) (read ()) in
       (try
         let _, s = Term.eval_c !Term.current_env term in
         print_string "= ";

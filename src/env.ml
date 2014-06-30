@@ -7,11 +7,13 @@ type t_symbol = {name : string; i: int; scope: int}
 let name s = s.name
 let id s = s.i
 let scope s = s.scope
+(*
 let pp s =
   let pp_n = "{name = "^s.name
   and pp_i = " ; id = "^(string_of_int s.i)
   and pp_sc = " ; scope = "^(string_of_int s.scope) in
   pp_n^pp_i^pp_sc
+*)
 
 module Symb = struct
   type t_hashed = int * string
@@ -98,11 +100,11 @@ let find d x = O.find d.values x.i
 let find_id d i = O.find d.values i
 
 let create env s = 
-  {id = s.i ; 
-  e_name = s.name ;
-  symbols = S.create 93 ; 
-  values = env.values ; 
-  chain = (ref env)::env.chain}
+  { id = s.i ; 
+    e_name = s.name ;
+    symbols = S.create 93 ; 
+    values = env.values ; 
+    chain = (ref env)::env.chain }
 
 let add d x = O.add d.values x.i
 let remove d x = O.remove d.values x.i
@@ -111,10 +113,10 @@ let symbols d = S.values d.symbols
 
 let copy e =
   { id = e.id ;
-  e_name = e.e_name ;
-  symbols = (S.copy (e.symbols)) ; 
-  values = (O.copy (e.values));
-  chain = e.chain}
+    e_name = e.e_name ;
+    symbols = (S.copy (e.symbols)) ; 
+    values = (O.copy (e.values));
+    chain = e.chain }
 
 let sanity_check e i =
   if i < O.size (e.values) then ()

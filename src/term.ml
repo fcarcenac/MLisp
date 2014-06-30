@@ -90,7 +90,7 @@ and pp = function
   | Quote c -> "'"^(pp c)
   | Unquote c -> ","^(pp c)
   | Quasiquote c -> "`"^(pp c)
-  | If(c,t,e) -> "(if"^(pp c)^" "^(pp t)^" "^(pp e)^")"
+  | If(c,t,e) -> "(if "^(pp c)^" "^(pp t)^" "^(pp e)^")"
   | Fun -> "fun"
   | NIL -> "()"
   | Cons(_,_) as x -> "("^(pp_cell x)^")"
@@ -107,7 +107,7 @@ and pp' = function
   | Symb s -> E.name s
   | Quote c -> "'"^(pp c)
   | Quasiquote c -> "`"^(pp c)
-  | If(c,t,e) -> "(if"^(pp c)^" "^(pp t)^" "^(pp e)^")"
+  | If(c,t,e) -> "(if "^(pp c)^" "^(pp t)^" "^(pp e)^")"
   | Unquote c -> ","^(pp c)
   | Fun -> "fun"
   | NIL -> "()"
@@ -236,6 +236,28 @@ let rec quasiquote env n y =
 and unquote env n y = 
   if n != 0 then quasiquote env n y else let _,e = eval_c env y in e
 
+and unbox = function
+  | NIL -> []
+  | Cons(car,cdr) -> car :: (unbox cdr)
+
+and compile_cond env = function
+  | NIL -> NIL
+  | Cons (Cons(TRUE,Cons(t,NIL)), _) -> compile env t
+  | Cons(Cons(c,Cons(t,NIL)),e) -> If(c,compile env t,compile_cond env e)
+  | x -> error2 "invalid expression" x
+      
+and compile env x =
+  match x with
+  | NIL | TRUE | Nb _ | Str _ | Port _ | Env _ | Fun -> x 
+  | Symb y -> (try lookup env y with Not_found -> x)
+  | Path (_,_) -> (try snd (eval_path env x) with Not_found -> x)
+  | Unquote y -> Unquote (compile env y)
+  | Quote y -> Quote (compile env y) 
+  | Quasiquote y -> Quasiquote (compile env y)
+  | Cons(Symb f,args) when f = Env.symbol env "cond" -> compile_cond env args
+  | Cons(car, cdr) -> Cons (compile env car, compile env cdr)
+  | If(c,t,e) -> If(compile env c, compile env t, compile env e)
+
 and eval_c env x =
   try
     match x with
@@ -274,9 +296,15 @@ and app_eval env f args =
   | Subr cf -> cf env args 
   | Path(_,_) -> let ne, f = eval_path env f in app_eval ne f args 
   | Symb s -> app_eval env (lookup env s) args
-  | Cons(Fun,Cons(params,Cons(expr,NIL))) -> bind_eval env Fun expr params args
+  | Cons(Fun,Cons(params,Cons(expr,NIL))) -> 
+      bind_eval env Fun expr params args
   | Fun -> Cons(f,args)
   | _ -> Cons(f,args)
+
+and eval_list env = function
+  | NIL -> []
+  | Cons (car,cdr) -> 
+      let r = eval_c env car in r :: (eval_list env cdr)
 
 and bind_eval env c exp p a =
   let rec f acc p a =

@@ -17,6 +17,12 @@ let rec eval_c env = function
     | (NIL | TRUE | Nb _ | Str _ | Port _ | Env _) as x -> env, x
     | Symb s -> env, lookup env s
     | Path (_,_) as x-> eval_path env x
+    | If(c,t,e) ->
+        begin
+          match (eval_c env c) with
+          | _, NIL -> eval_c env e
+          | _,_ -> eval_c env t
+        end
     | Quote y -> env, y
     | Quasiquote y -> env, quasiquote env 1 y
     | Cons(car, cdr) -> env, app_eval env car cdr 
