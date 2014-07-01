@@ -1,58 +1,3 @@
-(* $Author: frca $ *)
-(* $Date: 2013-03-18 08:29:46 $ *)
-(* $Revision: 1.16 $ *)
-(* *)
-(* *)
-(* Copyright (C) 2008-2009 Prover Technology SAS, All Rights Reserved *)
-(* ****************************************************************** *)
-
-(*
-The module defines the types, functions, modules and functors 
-required to implement instanciated HashTables
-This module defines a generic interface for HashTable :
-    - the type of hashtables key is a parameter of HashTable
-    - the type of stored elements is a parameter of HashTable
-
-@author François Carcenac
-*)
-
-(**
-{1 Module Description}
- *)
-
-(*
-{2 Purpose}
-The module defines the types, functions, modules and functors 
-required to implement instanciated HashTables
-This module defines a generic interface for HashTable :
-    - the type of hashtables key is a parameter of HashTable
-    - the type of stored elements is a parameter of HashTable
-
-{2 Provided services}
-{2 Implements}
-{2 Dependencies}
-{2 Interfaces}
-{4 Types}
-   NULL
-{4 Exceptions}
-   NULL
-{4 Constants}
-   NULL
-{4 Functions}
-{2 Internal Data}
-{4 Types}
-   NULL
-{4 Exceptions}
-   NULL
-{4 Constants}
-   NULL
-{4 Functions}
- *)
-
-(*
-{1 Module Data}
-*)
-
 let bernstein_hash s =
   let rec bernsteinHash i j h =
     if (i=j) then h
@@ -605,6 +550,6 @@ struct
   let hash = id
 end;;
 
-module Dictionary = MakeHashTable(HashedString);;
+module StrTable = MakeHashTable(HashedString);;
 
 module IntTable = MakeHashTable(HashedInt);;
