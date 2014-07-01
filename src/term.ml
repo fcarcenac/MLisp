@@ -249,7 +249,7 @@ and compile_cond env = function
 and compile env x =
   match x with
   | NIL | TRUE | Nb _ | Str _ | Port _ | Env _ | Fun -> x 
-  | Symb y -> (try lookup env y with Not_found -> x)
+  | Symb y -> x 
   | Path (_,_) -> (try snd (eval_path env x) with Not_found -> x)
   | Unquote y -> Unquote (compile env y)
   | Quote y -> Quote (compile env y) 
