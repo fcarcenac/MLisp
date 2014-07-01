@@ -1,31 +1,3 @@
-(* $Author: frca $ *)
-(* $Date: 2013-03-18 08:29:46 $ *)
-(* $Revision: 1.14 $ *)
-(* *)
-(* *)
-(* Copyright (C) 2008-2009 Prover Technology SAS, All Rights Reserved *)
-(* ****************************************************************** *)
-
-(** 
-The module defines the types, functions, modules and functors 
-required to implement instanciated HashTables
-This module defines a generic interface for HashTable :
-		- the type of hashtables key is a parameter of HashTable
-		- the type of stored elements is a parameter of HashTable
-
-@author François Carcenac
-*)
-
-(**{1 Parameterized HashTables}*)
-
-(**{2 Provided services}
-	- facilities for the definition of hashtables
-*)
-
-(**{2 Dependencies}	
-	- {!Set}
-*)
-
 module type HashInstanciation =
   sig
     type t_hashed
@@ -105,7 +77,7 @@ module MakeHashTable(K : HashInstanciation) :
   GenericHashTable with type t_key = K.t_hashed
 
 (**{4 String Hashtable}*)
-module Dictionary: GenericHashTable with type t_key=string
+module STable: GenericHashTable with type t_key=string
 
 (**{4 Int Hashtable}*)
 module IntTable: GenericHashTable with type t_key=int
