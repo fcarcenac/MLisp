@@ -32,6 +32,7 @@ type cell =
   | NIL
   | Subr of (ext_cell E.ext_t -> cell -> cell)
   | Cons of cell * cell
+  | Closure of cell list * (int * ext_cell) list * cell
 
 and port =
   | Input of string * Lexing.lexbuf * in_channel option
@@ -95,6 +96,7 @@ and pp = function
   | NIL -> "()"
   | Cons(_,_) as x -> "("^(pp_cell x)^")"
   | Subr _ -> "<subr>"
+  | Closure _ -> "<closure>"
 
 and pp' = function
   | Nb n -> string_of_int n
@@ -114,6 +116,7 @@ and pp' = function
   | Cons(x,y) when (not (is_cons y)) -> "("^(pp x)^" . "^(pp y)^")" 
   | Cons(_,_) as x -> "("^(pp_cell x)^")"
   | Subr _ -> "<subr>"
+  | Closure _ -> "<closure>"
 
 and print t = print_string (pp t)
 
@@ -219,10 +222,9 @@ NOTE:
   multiple quasiquote/unquote
   ``(,x y z) which evaluates to (x '(y z))
 *)
-
 let rec quasiquote env n y =
     match y with
-    | NIL | TRUE | Fun | Subr _ 
+    | NIL | TRUE | Fun | Subr _ | Closure _ 
     | Str _ | Nb _ | Port _ | Env _ -> y
     | Symb _ | Quote _ | Path (_,_) -> (*y*)
         if n>1 then Quote (quasiquote env (n-1) y) else y
@@ -239,21 +241,24 @@ and unquote env n y =
 and unbox = function
   | NIL -> []
   | Cons(car,cdr) -> car :: (unbox cdr)
+  | _ -> assert false
 
 and compile_cond env = function
   | NIL -> NIL
   | Cons (Cons(TRUE,Cons(t,NIL)), _) -> compile env t
   | Cons(Cons(c,Cons(t,NIL)),e) -> If(c,compile env t,compile_cond env e)
   | x -> error2 "invalid expression" x
-      
+
 and compile env x =
   match x with
-  | NIL | TRUE | Nb _ | Str _ | Port _ | Env _ | Fun -> x 
-  | Symb y -> x 
-  | Path (_,_) -> (try snd (eval_path env x) with Not_found -> x)
+  | NIL | TRUE | Nb _ | Str _ | Port _ | Env _ | Fun | Closure _ -> x 
+  | Symb _ | Path (_,_) -> x
+  (*(try snd (eval_path env x) with Not_found -> x)*)
   | Unquote y -> Unquote (compile env y)
   | Quote y -> Quote (compile env y) 
   | Quasiquote y -> Quasiquote (compile env y)
+  | Cons(Fun,Cons(args,Cons(expr,NIL))) -> 
+      Closure(unbox args, [], compile env expr)
   | Cons(Symb f,args) when f = Env.symbol env "cond" -> compile_cond env args
   | Cons(car, cdr) -> Cons (compile env car, compile env cdr)
   | If(c,t,e) -> If(compile env c, compile env t, compile env e)
@@ -261,7 +266,7 @@ and compile env x =
 and eval_c env x =
   try
     match x with
-    | NIL | TRUE | Nb _ | Str _ | Port _ | Env _ -> env, x
+    | NIL | TRUE | Nb _ | Str _ | Port _ | Env _ | Subr _ | Closure _ -> env, x
     | Symb x -> env, lookup env x
     | Path(_,_) -> eval_path env x
     | Quote y -> env, y
@@ -296,10 +301,22 @@ and app_eval env f args =
   | Subr cf -> cf env args 
   | Path(_,_) -> let ne, f = eval_path env f in app_eval ne f args 
   | Symb s -> app_eval env (lookup env s) args
+  | Closure(params, l,  expr) -> apply_c env expr l params args
   | Cons(Fun,Cons(params,Cons(expr,NIL))) -> 
       bind_eval env Fun expr params args
   | Fun -> Cons(f,args)
   | _ -> Cons(f,args)
+
+and apply_c env expr l params args =
+  let rec f acc1 p a =
+    match p, a with
+    | [], NIL -> bind env expr acc1 
+    | [], _ -> error "too many arguments"
+    | _, NIL -> Closure(p,acc1, expr) 
+    | (Symb x) :: p, Cons(e,a) ->
+        let c = { value = eval env e ; plist = PList.empty } in
+        f ((x.E.i,c)::acc1) p a in
+  f l params args
 
 and eval_list env = function
   | NIL -> []
@@ -339,3 +356,4 @@ and pop_list env e = function
       pop_list env e tl
         
 and eval env x = snd (eval_c env x)
+

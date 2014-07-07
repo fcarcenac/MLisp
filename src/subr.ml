@@ -13,8 +13,36 @@ let is_binary t = is_null(cddr t)
 let is_unary t = is_null(cdr t)
 let is_ternary t = is_null(cdddr t)
 
+(* ************************************************************************** *)
+(* Quasiquoting/Evaluation/Application *)
+
+(* 
+NOTE: 
+  quasiquote should handle explicit levels (in order to be able to combine
+  multiple quasiquote/unquote
+  ``(,x y z) which evaluates to (x '(y z))
+*)
+
+let rec quasiquote env n y =
+    match y with
+    | NIL | TRUE | Fun | Subr _ | Closure _ 
+    | Str _ | Nb _ | Port _ | Env _ -> y
+    | Symb _ | Quote _ | Path (_,_) -> (*y*)
+        if n>1 then Quote (quasiquote env (n-1) y) else y
+    | Cons(Fun, l) -> Cons(Fun, quasiquote env n l)
+    | Cons(x, l) -> Cons(quasiquote env n x, quasiquote env n l)
+    | If(c,t,e) -> 
+        If(quasiquote env n c, quasiquote env n t, quasiquote env n e)
+    | Unquote z -> unquote env (n-1) z
+    | Quasiquote y -> quasiquote env (n+1) y
+
+and unquote env n y = 
+  if n != 0 then quasiquote env n y else let _,e = eval_c env y in e
+
+
 let rec eval_c env = function
-    | (NIL | TRUE | Nb _ | Str _ | Port _ | Env _) as x -> env, x
+    | (NIL | TRUE | Nb _ | Str _ | Port _ | Env _ | Subr _ | Closure _) as x -> 
+        env, x
     | Symb s -> env, lookup env s
     | Path (_,_) as x-> eval_path env x
     | If(c,t,e) ->
@@ -25,7 +53,8 @@ let rec eval_c env = function
         end
     | Quote y -> env, y
     | Quasiquote y -> env, quasiquote env 1 y
-    | Cons(car, cdr) -> env, app_eval env car cdr 
+    | Cons(car, cdr) -> 
+        env, app_eval env car cdr 
 
 and eval_path env = function
   | Symb x -> env, lookup env x
@@ -36,10 +65,26 @@ and app_eval env f args =
   match f with
   | Subr cf -> cf env args 
   | Path(x,y) -> let ne, f = eval_path env f in app_eval ne f args 
-  | Symb s -> app_eval env (lookup env s) args
-  | Cons(Fun,Cons(params,Cons(expr,NIL))) -> bind_eval env Fun expr params args
-  | Fun -> Cons(f,args)
-  | _ -> Cons(f,args)
+  | Symb s -> 
+      app_eval env (lookup env s) args
+  | Closure(params, l, expr) -> 
+      apply_c env expr l params args
+  | Cons(Fun,Cons(params,Cons(expr,NIL))) -> 
+      bind_eval env Fun expr params args
+(*  | Fun -> Cons(f,args)*)
+  | _ -> eval env (Cons(eval env f, args))
+
+and apply_c env expr l params args =
+  let rec f acc1 p a =
+    match p, a with
+    | [], NIL -> bind env expr acc1
+    | [], _ -> error "too many arguments"
+    | _, NIL -> 
+        Closure(p, acc1, expr)
+    | (Symb x) :: y, Cons(a,b) ->
+        let c = { value = eval env a ; plist = PList.empty } in
+        f ((x.E.i,c)::acc1) y b in
+  f l params args
 
 and bind_eval env c exp p a =
   let rec f acc p a =
@@ -62,7 +107,8 @@ and bind env exp l =
         f tl (id::acc) in
   f l []
 
-and apply env exp l = let _, ne = eval_c env exp in pop_list env ne l
+and apply env exp l = 
+  let _, ne = eval_c env exp in pop_list env ne l
 
 and pop_list env e = function
   | [] -> e
@@ -152,7 +198,7 @@ and def_rec x e env =
 (* 'let' definition : "(let (x v) expr)" *)
 and  do_let env t =
   let rec f acc = function
-    | Cons(e,NIL) -> bind env e acc
+    | Cons(e,NIL) -> bind env e acc 
     | Cons(Cons(Symb x,Cons(y,NIL)),tl) ->
         let c = {value = eval env y; plist = PList.empty} in
         f ((x.Env.i,c)::acc) tl 
