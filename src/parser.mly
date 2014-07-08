@@ -27,7 +27,6 @@ let rec mk_path e = function
 %token Token_pdot
 %token Token_lpar Token_rpar 
 %token Token_nil
-%token Token_if
 %token Token_quote
 %token Token_quasiquote
 %token Token_unquote
@@ -72,7 +71,6 @@ expr_list:
 
 par_expr:
   | expr Token_dot expr             { Term.Cons($1,$3) }
-  | Token_if expr expr expr         { Term.If($2,$3,$4) }
   | list_expr                       { $1 }
 
 list_expr:

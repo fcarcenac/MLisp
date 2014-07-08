@@ -42,7 +42,6 @@ let QUOTE = '\''
 let UNQUOTE = ','
 let QUASIQUOTE = '`'
 let NIL = "nil" | "NIL" | "Nil"
-let IF = "if"
 
 let STRING = '"' [^ '"' ]* '"'
 
@@ -70,7 +69,6 @@ rule lisp_token = parse
   | LPAR                {Token_lpar}
   | RPAR                {Token_rpar}
   | NIL                 {Token_nil}
-  | IF                  {Token_if}
   | STRING      (* Remove the front and back double quotes *)
       { 
         let s = (Lexing.lexeme lexbuf) in 
