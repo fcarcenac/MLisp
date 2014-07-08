@@ -162,27 +162,6 @@ and do_set_plist env t =
   l
   
 (* ************************************************************************** *)
-(* CONDITIONAL branching *)
-(* 'if' definition *)
-and do_if env x = 
-  let loc_if = function
-    | Cons(c,Cons(t,Cons(e,NIL))) ->
-        if (eval env c)=NIL then eval_c env e else eval_c env t
-    | x -> error2 "if is expected exactly 3 argumens" x in
-  let _, y = loc_if x in y
-
-(* 'cond' definition *)
-and do_cond env t =
-  let rec eval_cond = function
-    | NIL -> env, NIL
-    | Cons(Cons(c,Cons(bch,NIL)),l) ->
-        (match eval_c env c with
-        | _,NIL -> eval_cond l 
-        | _ -> eval_c env bch) 
-    | t -> error2 "expected a case branch" t in
-  let _, y = eval_cond t in y
-
-(* ************************************************************************** *)
 (* BINDING functions *)
 and def_rec x e env =
   match x with
@@ -676,7 +655,6 @@ let init_global () =
   add_subr "defun" do_defun;
   add_subr "quote" do_quote;
   add_subr "eval" do_eval;
-  add_subr "cond" do_cond;
   add_subr "set" do_set;
   add_subr "setq" do_setq;
   add_subr "let" do_let;

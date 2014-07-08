@@ -253,7 +253,6 @@ and compile env x =
   match x with
   | NIL | TRUE | Nb _ | Str _ | Port _ | Env _ | Fun | Closure _ -> x 
   | Symb _ | Path (_,_) -> x
-  (*(try snd (eval_path env x) with Not_found -> x)*)
   | Unquote y -> Unquote (compile env y)
   | Quote y -> Quote (compile env y) 
   | Quasiquote y -> Quasiquote (compile env y)
