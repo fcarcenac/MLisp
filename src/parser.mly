@@ -7,14 +7,16 @@ module M = Misc
 let rec mk_path e = function
   | [x] -> Term.Symb(E.symbol e x)
   | x::l ->
-      try
-        let sx = Term.Symb(E.symbol e x) in
-        let ne = 
-          match Term.eval_c e sx with
-          | _,Term.Env x -> x 
-          | _,_ -> Term.error2 "expected an <env> value" sx in
-        Term.Path(sx, mk_path ne l)
-      with e -> raise e
+      begin
+        try
+          let sx = Term.Symb(E.symbol e x) in
+          let ne = 
+            match Term.eval_c e sx with
+            | _,Term.Env x -> x 
+            | _,_ -> Term.error2 "expected an <env> value" sx in
+          Term.Path(sx, mk_path ne l)
+        with e -> raise e
+      end
   | _ -> raise Parse_error
 
 %}
