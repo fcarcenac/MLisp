@@ -259,9 +259,12 @@ and compile env x =
   | Quasiquote y -> Quasiquote (compile env y)
   | Cons(Fun,Cons(args,Cons(expr,NIL))) -> 
       Closure(unbox args, [], compile env expr)
+  | Cons(Symb f,Cons(c,Cons(t,Cons(e,NIL)))) when f = Env.symbol env "if" ->
+      If(compile env c,compile env t,compile env e)
   | Cons(Symb f,args) when f = Env.symbol env "cond" -> compile_cond env args
   | Cons(car, cdr) -> Cons (compile env car, compile env cdr)
   | If(c,t,e) -> If(compile env c, compile env t, compile env e)
+  | _ -> assert false
 
 and eval_c env x =
   try
@@ -315,13 +318,15 @@ and apply_c env expr l params args =
     | _, NIL -> Closure(p,acc1, expr) 
     | (Symb x) :: p, Cons(e,a) ->
         let c = { value = eval env e ; plist = PList.empty } in
-        f ((x.E.i,c)::acc1) p a in
+        f ((x.E.i,c)::acc1) p a 
+    | _ -> assert false in
   f l params args
 
 and eval_list env = function
   | NIL -> []
   | Cons (car,cdr) -> 
       let r = eval_c env car in r :: (eval_list env cdr)
+  | _ -> assert false
 
 and bind_eval env c exp p a =
   let rec f acc p a =

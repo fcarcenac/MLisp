@@ -54,7 +54,8 @@ let rec eval_c env = function
     | Quote y -> env, y
     | Quasiquote y -> env, quasiquote env 1 y
     | Cons(car, cdr) -> 
-        env, app_eval env car cdr 
+        env, app_eval env car cdr
+    | _ -> assert false
 
 and eval_path env = function
   | Symb x -> env, lookup env x
@@ -64,7 +65,7 @@ and eval_path env = function
 and app_eval env f args =
   match f with
   | Subr cf -> cf env args 
-  | Path(x,y) -> let ne, f = eval_path env f in app_eval ne f args 
+  | Path _ -> let ne, f = eval_path env f in app_eval ne f args 
   | Symb s -> 
       app_eval env (lookup env s) args
   | Closure(params, l, expr) -> 
@@ -83,7 +84,8 @@ and apply_c env expr l params args =
         Closure(p, acc1, expr)
     | (Symb x) :: y, Cons(a,b) ->
         let c = { value = eval env a ; plist = PList.empty } in
-        f ((x.E.i,c)::acc1) y b in
+        f ((x.E.i,c)::acc1) y b 
+    | _ -> assert false in
   f l params args
 
 and bind_eval env c exp p a =
@@ -225,7 +227,7 @@ and do_define env t =
   def_rec label expr env;
   label
 
-and mk_fun env args body = function
+and mk_fun _ args body = function
   | Fun -> Cons(Fun,Cons(args,Cons(body,NIL)))
   | x -> error2 "expected to be a function symbol" x
 
