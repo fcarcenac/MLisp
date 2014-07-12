@@ -40,7 +40,9 @@ and unquote env n y =
   if n != 0 then quasiquote env n y else let _,e = eval_c env y in e
 
 
-let rec eval_c env = function
+let rec eval_c env x = 
+  try
+    match x with
     | (NIL | TRUE | Nb _ | Str _ | Port _ | Env _ | Subr _ | Closure _) as x -> 
         env, x
     | Symb s -> env, lookup env s
@@ -56,6 +58,17 @@ let rec eval_c env = function
     | Cons(car, cdr) -> 
         env, app_eval env car cdr
     | _ -> assert false
+  with 
+  | Error -> 
+    begin
+      print_endline ("error when evaluating ... "^(pp x));
+      env,NIL
+    end
+  | Not_found ->
+      begin
+        print_endline ("unknown identifier: "^(pp x));
+        env,NIL
+      end
 
 and eval_path env = function
   | Symb x -> env, lookup env x
@@ -643,6 +656,9 @@ and do_exit _ _ = raise End_of_file
 (* PERVASIVES *)
 let add_subr s f = 
   extend_global (Env.symbol !current_env s) (Subr f) !current_env
+
+let intern s =
+  extend_global (Env.symbol !current_env s) NIL !current_env
 
 let init_global () =
   extend_global 
