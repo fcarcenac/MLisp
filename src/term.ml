@@ -27,7 +27,6 @@ type cell =
   | Unquote of cell
   | Quasiquote of cell
   | If of cell * cell * cell
-  | Fun 
   | Symb of E.t_symbol
   | NIL
   | Subr of (ext_cell E.ext_t -> cell -> cell)
@@ -92,7 +91,6 @@ and pp = function
   | Unquote c -> ","^(pp c)
   | Quasiquote c -> "`"^(pp c)
   | If(c,t,e) -> "(if "^(pp c)^" "^(pp t)^" "^(pp e)^")"
-  | Fun -> "fun"
   | NIL -> "()"
   | Cons(_,_) as x -> "("^(pp_cell x)^")"
   | Subr _ -> "<subr>"
@@ -111,7 +109,6 @@ and pp' = function
   | Quasiquote c -> "`"^(pp c)
   | If(c,t,e) -> "(if "^(pp c)^" "^(pp t)^" "^(pp e)^")"
   | Unquote c -> ","^(pp c)
-  | Fun -> "fun"
   | NIL -> "()"
   | Cons(x,y) when (not (is_cons y)) -> "("^(pp x)^" . "^(pp y)^")" 
   | Cons(_,_) as x -> "("^(pp_cell x)^")"
@@ -224,11 +221,10 @@ NOTE:
 *)
 let rec quasiquote env n y =
     match y with
-    | NIL | TRUE | Fun | Subr _ | Closure _ 
+    | NIL | TRUE | Subr _ | Closure _ 
     | Str _ | Nb _ | Port _ | Env _ -> y
     | Symb _ | Quote _ | Path (_,_) -> (*y*)
         if n>1 then Quote (quasiquote env (n-1) y) else y
-    | Cons(Fun, l) -> Cons(Fun, quasiquote env n l)
     | Cons(x, l) -> Cons(quasiquote env n x, quasiquote env n l)
     | If(c,t,e) -> 
         If(quasiquote env n c, quasiquote env n t, quasiquote env n e)
@@ -253,7 +249,7 @@ and compile_cond env = function
 and macroexpand env x =
   match x with
   | NIL | TRUE | Nb _ | Str _ 
-  | Port _ | Env _ | Fun
+  | Port _ | Env _ 
   | Quote _ | Unquote _ | Quasiquote _ 
   | Symb s -> macroexpand env (lookup env x)
   | Closure(a,l,e) ->
@@ -269,48 +265,46 @@ and macroexpand_l env cdr car =
   match car with
   | Macro x -> 
 *)
-(*
 and compile env x =
   let rec compile0 env x k = 
     match x with
     | NIL | TRUE | Nb _ | Str _ 
-    | Port _ | Env _ | Fun | Closure _ 
+    | Port _ | Env _ | Closure _ 
     | Symb _ | Path (_,_) -> k x
     | Unquote y -> compile0 env y (fun z -> k (Unquote z))
     | Quote y -> compile0 env y (fun z -> k (Quote z)) 
     | Quasiquote y -> compile0 env y (fun z -> k (Quasiquote z))
-    (*
     | Cons(Symb f,Cons(args,Cons(expr,NIL))) when f = Env.symbol env "fun" ->
-    *)
-    | Cons(Fun,Cons(args,Cons(expr,NIL))) -> 
         compile0 env expr (fun x -> k (Closure(unbox args, [], x)))
     | Cons(Symb f,Cons(c,Cons(t,Cons(e,NIL)))) when f = Env.symbol env "if" ->
         compile0 
           env c 
           (fun x -> 
             compile0 env t (fun y -> compile0 env e (fun z -> k (If(x,y,z)))))
-    | Cons(Symb f,args) when f = Env.symbol env "cond" -> compile_cond env args
+    | Cons(Symb f,args) when f = Env.symbol env "cond" -> 
+        k (compile_cond env args)
     | Cons(car, cdr) -> 
         compile0 env car (fun x -> compile0 env cdr (fun y -> k (Cons(x,y))))
     | _ -> assert false in
   compile0 env x (fun x -> x)
-*)
+
+(*
 and compile env x = 
     match x with
     | NIL | TRUE | Nb _ | Str _ 
-    | Port _ | Env _ | Fun | Closure _ 
+    | Port _ | Env _ | Closure _ 
     | Symb _ | Path (_,_) -> x
     | Unquote y -> Unquote (compile env y)
     | Quote y -> Quote (compile env y) 
     | Quasiquote y -> Quasiquote (compile env y)
     | Cons(Symb f,Cons(args,Cons(expr,NIL))) when f = Env.symbol env "fun" ->
-(*    | Cons(Fun,Cons(args,Cons(expr,NIL))) -> 
-*)        Closure(unbox args, [], compile env expr)
+        Closure(unbox args, [], compile env expr)
     | Cons(Symb f,Cons(c,Cons(t,Cons(e,NIL)))) when f = Env.symbol env "if" ->
         If(compile env c,compile env t,compile env e)
     | Cons(Symb f,args) when f = Env.symbol env "cond" -> compile_cond env args
     | Cons(car, cdr) -> Cons(compile env car, compile env cdr)
     | _ -> assert false
+*)
 
 and eval_c env x =
   try
@@ -351,9 +345,6 @@ and app_eval env f args =
   | Path(_,_) -> let ne, f = eval_path env f in app_eval ne f args 
   | Symb s -> app_eval env (lookup env s) args
   | Closure(params, l,  expr) -> apply_c env expr l params args
-  | Cons(Fun,Cons(params,Cons(expr,NIL))) -> 
-      bind_eval env Fun expr params args
-  | Fun -> Cons(f,args)
   | _ -> Cons(f,args)
 
 and apply_c env expr l params args =
@@ -373,18 +364,6 @@ and eval_list env = function
   | Cons (car,cdr) -> 
       let r = eval_c env car in r :: (eval_list env cdr)
   | _ -> assert false
-
-and bind_eval env c exp p a =
-  let rec f acc p a =
-    match c,p,a with
-    | _,NIL,NIL -> bind env exp acc
-    | _,NIL, _ -> error "too many arguments"
-    | Fun, _, NIL -> error "too few arguments" 
-    | _,Cons(Symb x,y),Cons(a,b) -> 
-        let c = {value = eval env a ; plist = PList.empty} in
-        f ((x.E.i,c)::acc) y b
-    | _,_,_ -> assert false in
-  f [] p a
 
 and bind env exp l =
   let rec f l acc =

@@ -25,11 +25,10 @@ NOTE:
 
 let rec quasiquote env n y =
     match y with
-    | NIL | TRUE | Fun | Subr _ | Closure _ 
+    | NIL | TRUE | Subr _ | Closure _ 
     | Str _ | Nb _ | Port _ | Env _ -> y
     | Symb _ | Quote _ | Path (_,_) -> (*y*)
         if n>1 then Quote (quasiquote env (n-1) y) else y
-    | Cons(Fun, l) -> Cons(Fun, quasiquote env n l)
     | Cons(x, l) -> Cons(quasiquote env n x, quasiquote env n l)
     | If(c,t,e) -> 
         If(quasiquote env n c, quasiquote env n t, quasiquote env n e)
@@ -43,7 +42,8 @@ and unquote env n y =
 let rec eval_c env x = 
   try
     match x with
-    | (NIL | TRUE | Nb _ | Str _ | Port _ | Env _ | Subr _ | Closure _) as x -> 
+    | NIL | TRUE | Nb _ | Str _ | Port _ 
+    | Env _ | Subr _ | Closure _ -> 
         env, x
     | Symb s -> env, lookup env s
     | Path (_,_) as x-> eval_path env x
@@ -55,8 +55,7 @@ let rec eval_c env x =
         end
     | Quote y -> env, y
     | Quasiquote y -> env, quasiquote env 1 y
-    | Cons(car, cdr) -> 
-        env, app_eval env car cdr
+    | Cons(car, cdr) -> env, app_eval env car cdr
     | _ -> assert false
   with 
   | Error -> 
@@ -79,39 +78,21 @@ and app_eval env f args =
   match f with
   | Subr cf -> cf env args 
   | Path _ -> let ne, f = eval_path env f in app_eval ne f args 
-  | Symb s -> 
-      app_eval env (lookup env s) args
-  | Closure(params, l, expr) -> 
-      apply_c env expr l params args
-  | Cons(Fun,Cons(params,Cons(expr,NIL))) -> 
-      bind_eval env Fun expr params args
-(*  | Fun -> Cons(f,args)*)
-  | _ -> eval env (Cons(eval env f, args))
+  | Symb s -> app_eval env (lookup env s) args
+  | Closure(params, l, expr) -> apply_c env expr l params args
+  | _ -> Cons(f, args)
 
 and apply_c env expr l params args =
   let rec f acc1 p a =
     match p, a with
     | [], NIL -> bind env expr acc1
     | [], _ -> error "too many arguments"
-    | _, NIL -> 
-        Closure(p, acc1, expr)
+    | _, NIL -> Closure(p, acc1, expr)
     | (Symb x) :: y, Cons(a,b) ->
-        let c = { value = eval env a ; plist = PList.empty } in
+        let c = { value = snd (eval_c env a) ; plist = PList.empty } in
         f ((x.E.i,c)::acc1) y b 
     | _ -> assert false in
   f l params args
-
-and bind_eval env c exp p a =
-  let rec f acc p a =
-    match c,p,a with
-    | _,NIL,NIL -> bind env exp acc
-    | _,NIL, _ -> error "too many arguments"
-    | Fun, _, NIL -> error "too few arguments" 
-    | _,Cons(Symb x,y),Cons(a,b) -> 
-        let c = {value = eval env a ; plist = PList.empty} in
-        f ((x.E.i,c)::acc) y b
-    | _,_,_ -> assert false in
-  f [] p a
 
 and bind env exp l =
   let rec f l acc =
@@ -219,13 +200,9 @@ and do_define env t =
   def_rec label expr env;
   label
 
-and mk_fun _ args body = function
-  | Fun -> Cons(Fun,Cons(args,Cons(body,NIL)))
-  | x -> error2 "expected to be a function symbol" x
-
 and do_defun env t =
   let label = car t and args = cadr t and body = caddr t in
-  let expr = Cons(Fun, Cons(args, Cons(body,NIL))) in
+  let expr = Closure(unbox args, [], body) in
   def_rec label expr env;
   label
 
