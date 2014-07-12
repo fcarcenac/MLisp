@@ -30,8 +30,6 @@ let NUMBER = '-'? NUM+
 let ANY = _
 
 let TRUE = "#t"
-let FUN = "fun"
-let CLOS = "clos"
 
 let COLON = ':'
 (*let PDOT = '.'*)
@@ -64,8 +62,6 @@ rule lisp_token = parse
   | QUOTE               {Token_quote}
   | QUASIQUOTE          {Token_quasiquote}
   | UNQUOTE             {Token_unquote}
-  | FUN                 {Token_fun}
-  | CLOS                {Token_clos}
   | LPAR                {Token_lpar}
   | RPAR                {Token_rpar}
   | NIL                 {Token_nil}

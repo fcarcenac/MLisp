@@ -34,9 +34,6 @@ let rec mk_path e = function
 %token Token_unquote
 %token Token_true
 %token Token_false
-%token Token_fun
-%token Token_nfun
-%token Token_clos
 %token Token_dot
 
 %start main             /* the entry point */
@@ -60,8 +57,8 @@ expr_atom:
   /* First argument of M.ssplit is a regexp, Take car with special characters */
   | Token_symbol  {let l = M.ssplit "\." $1 in mk_path  (!Term.current_env) l}
   | Token_nil     {(Term.NIL)}
-  | Token_fun               {(Term.Fun)}
   /*
+  | Token_fun               {(Term.Fun)}
   | path          { mk_path (!Term.current_env) $1}
   */
 
