@@ -249,21 +249,68 @@ and compile_cond env = function
   | Cons(Cons(c,Cons(t,NIL)),e) -> If(c,compile env t,compile_cond env e)
   | x -> error2 "invalid expression" x
 
-and compile env x =
+(*
+and macroexpand env x =
   match x with
-  | NIL | TRUE | Nb _ | Str _ | Port _ | Env _ | Fun | Closure _ -> x 
-  | Symb _ | Path (_,_) -> x
-  | Unquote y -> Unquote (compile env y)
-  | Quote y -> Quote (compile env y) 
-  | Quasiquote y -> Quasiquote (compile env y)
-  | Cons(Fun,Cons(args,Cons(expr,NIL))) -> 
-      Closure(unbox args, [], compile env expr)
-  | Cons(Symb f,Cons(c,Cons(t,Cons(e,NIL)))) when f = Env.symbol env "if" ->
-      If(compile env c,compile env t,compile env e)
-  | Cons(Symb f,args) when f = Env.symbol env "cond" -> compile_cond env args
-  | Cons(car, cdr) -> Cons (compile env car, compile env cdr)
-  | If(c,t,e) -> If(compile env c, compile env t, compile env e)
-  | _ -> assert false
+  | NIL | TRUE | Nb _ | Str _ 
+  | Port _ | Env _ | Fun
+  | Quote _ | Unquote _ | Quasiquote _ 
+  | Symb s -> macroexpand env (lookup env x)
+  | Closure(a,l,e) ->
+      Closure(
+        Misc.map (macroexpand env) x, 
+        Misc.map (macroexpand env) l,
+        macroexpand env e)
+  | Path(_,_) -> macroexpand env (eval_path env x)
+  | Macro(x) -> Macro(macroexpand env x)
+  | Cons(car, cdr) -> macroexpand_l env cdr (macroexpand env car)
+
+and macroexpand_l env cdr car =
+  match car with
+  | Macro x -> 
+*)
+(*
+and compile env x =
+  let rec compile0 env x k = 
+    match x with
+    | NIL | TRUE | Nb _ | Str _ 
+    | Port _ | Env _ | Fun | Closure _ 
+    | Symb _ | Path (_,_) -> k x
+    | Unquote y -> compile0 env y (fun z -> k (Unquote z))
+    | Quote y -> compile0 env y (fun z -> k (Quote z)) 
+    | Quasiquote y -> compile0 env y (fun z -> k (Quasiquote z))
+    (*
+    | Cons(Symb f,Cons(args,Cons(expr,NIL))) when f = Env.symbol env "fun" ->
+    *)
+    | Cons(Fun,Cons(args,Cons(expr,NIL))) -> 
+        compile0 env expr (fun x -> k (Closure(unbox args, [], x)))
+    | Cons(Symb f,Cons(c,Cons(t,Cons(e,NIL)))) when f = Env.symbol env "if" ->
+        compile0 
+          env c 
+          (fun x -> 
+            compile0 env t (fun y -> compile0 env e (fun z -> k (If(x,y,z)))))
+    | Cons(Symb f,args) when f = Env.symbol env "cond" -> compile_cond env args
+    | Cons(car, cdr) -> 
+        compile0 env car (fun x -> compile0 env cdr (fun y -> k (Cons(x,y))))
+    | _ -> assert false in
+  compile0 env x (fun x -> x)
+*)
+and compile env x = 
+    match x with
+    | NIL | TRUE | Nb _ | Str _ 
+    | Port _ | Env _ | Fun | Closure _ 
+    | Symb _ | Path (_,_) -> x
+    | Unquote y -> Unquote (compile env y)
+    | Quote y -> Quote (compile env y) 
+    | Quasiquote y -> Quasiquote (compile env y)
+    | Cons(Symb f,Cons(args,Cons(expr,NIL))) when f = Env.symbol env "fun" ->
+(*    | Cons(Fun,Cons(args,Cons(expr,NIL))) -> 
+*)        Closure(unbox args, [], compile env expr)
+    | Cons(Symb f,Cons(c,Cons(t,Cons(e,NIL)))) when f = Env.symbol env "if" ->
+        If(compile env c,compile env t,compile env e)
+    | Cons(Symb f,args) when f = Env.symbol env "cond" -> compile_cond env args
+    | Cons(car, cdr) -> Cons(compile env car, compile env cdr)
+    | _ -> assert false
 
 and eval_c env x =
   try
