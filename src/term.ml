@@ -285,7 +285,8 @@ and compile env x =
         k (compile_cond env args)
     | Cons(car, cdr) -> 
         compile0 env car (fun x -> compile0 env cdr (fun y -> k (Cons(x,y))))
-    | _ -> assert false in
+    | _ -> assert false 
+  in
   compile0 env x (fun x -> x)
 
 (*
