@@ -16,7 +16,12 @@ exception Error
 (* type t_env = ext_cell D.t_hashtable
 and ext_env = {env : t_env ; parent : (ext_env ref) option }*)
 
-type cell =
+type subr =
+  | F1 of (cell -> cell)
+  | F2 of (cell -> cell -> cell)
+  | Fn of (ext_cell E.ext_t -> cell -> cell)
+
+and cell =
   | TRUE
   | Str of string
   | Nb of int
@@ -29,7 +34,7 @@ type cell =
   | If of cell * cell * cell
   | Symb of E.t_symbol
   | NIL
-  | Subr of (ext_cell E.ext_t -> cell -> cell)
+  | Subr of subr (*(ext_cell E.ext_t -> cell -> cell)*)
   | Cons of cell * cell
   | Closure of cell list * (int * ext_cell) list * cell
 
@@ -110,7 +115,6 @@ and pp' = function
   | If(c,t,e) -> "(if "^(pp c)^" "^(pp t)^" "^(pp e)^")"
   | Unquote c -> ","^(pp c)
   | NIL -> "()"
-  | Cons(x,y) when (not (is_cons y)) -> "("^(pp x)^" . "^(pp y)^")" 
   | Cons(_,_) as x -> "("^(pp_cell x)^")"
   | Subr _ -> "<subr>"
   | Closure _ -> "<closure>"
@@ -120,23 +124,24 @@ and print t = print_string (pp t)
 
 (* ************************************************************************** *)
 (* ERROR HANDLING *)
-
+(*
 and error2 msg e = 
   print_endline ("ERR: "^msg^": "^(pp e)); 
   raise Error
-
+*)
+let error2 msg e = print_endline (msg^": "^(pp e)); raise Error
 
 (* ************************************************************************** *)
 (* CELL ACCESSORS *)
 
-and car = function Cons(c,_) -> c | t -> error2 "not a cons cell" t
-and cdr = function Cons(_,l) -> l | t -> error2 "not a cons cell" t
-and cadr = function Cons(_,Cons(c,_)) -> c | t -> error2 "not a cons cell" t
-and cddr = function Cons(_,Cons(_,l)) -> l | t -> error2 "not a cons cell" t
-and caddr = function 
+let car = function Cons(c,_) -> c | t -> error2 "not a cons cell" t
+let cdr = function Cons(_,l) -> l | t -> error2 "not a cons cell" t
+let cadr = function Cons(_,Cons(c,_)) -> c | t -> error2 "not a cons cell" t
+let cddr = function Cons(_,Cons(_,l)) -> l | t -> error2 "not a cons cell" t
+let caddr = function 
   | Cons (_,(Cons(_,Cons(c,_)))) -> c 
   | t -> error2 "not a cons cell" t
-and cdddr = function
+let cdddr = function
   | Cons (_,(Cons(_,Cons(_,l)))) -> l
   | t -> error2 "not a cons cell" t
 
@@ -144,21 +149,17 @@ and cdddr = function
 (* ************************************************************************** *)
 (* Conversions *)
 
-let error2 msg e = print_endline (msg^": "^(pp e)); raise Error
-
-let int_of_cell = function Nb n -> n | t -> error2 "not a num" t
-let string_of_cell = function Str s -> s | t -> error2 "not a string" t
-let symb_of_cell = function Symb s -> s | t -> error2 "not a symbol" t
-let env_of_cell = function Env e -> e | t -> error2 "not a environment" t
-let fun_of_cell = function
-  | Subr f -> f 
-  | _ -> failwith "fun_of_cell - internal error"
+let int_of_cell = function Nb n -> n | t -> error2 "expected a num" t
+let string_of_cell = function Str s -> s | t -> error2 "expected a string" t
+let symb_of_cell = function Symb s -> s | t -> error2 "expected a symbol" t
+let env_of_cell = function Env e -> e | t -> error2 "expected an environment" t
+let fun_of_cell = function Subr f -> f | t -> error2 "expected a <subr>" t
 
 let path_of_cell x =
   let rec path0 aux = function
     | Path (x, ((Path _) as y)) -> (path0 (x::aux) y)
     | Path (x, y) -> [x;y]
-    | _ -> error2 "not a path" x
+    | _ -> error2 "bad path expression" x
   in path0 [] x
 
 (* ************************************************************************** *)
@@ -270,7 +271,8 @@ and compile env x =
     match x with
     | NIL | TRUE | Nb _ | Str _ 
     | Port _ | Env _ | Closure _ 
-    | Symb _ | Path (_,_) -> k x
+    | Path (_,_) | Subr _ | Symb _ -> k x
+    (*| Symb s -> k (try lookup env s with Not_found -> x)*)
     | Unquote y -> compile0 env y (fun z -> k (Unquote z))
     | Quote y -> compile0 env y (fun z -> k (Quote z)) 
     | Quasiquote y -> compile0 env y (fun z -> k (Quasiquote z))
@@ -285,7 +287,7 @@ and compile env x =
         k (compile_cond env args)
     | Cons(car, cdr) -> 
         compile0 env car (fun x -> compile0 env cdr (fun y -> k (Cons(x,y))))
-    | _ -> assert false 
+    | _ -> assert false
   in
   compile0 env x (fun x -> x)
 
@@ -308,7 +310,7 @@ and compile env x =
 *)
 
 and eval_c env x =
-  try
+(*  try*)
     match x with
     | NIL | TRUE | Nb _ | Str _ | Port _ | Env _ | Subr _ | Closure _ -> env, x
     | Symb x -> env, lookup env x
@@ -323,7 +325,7 @@ and eval_c env x =
         end
     | Cons(car, cdr) -> env, app_eval env car cdr
     | _ -> error2 "invalid expression" x
-  with 
+(*  with 
   | Error -> 
     begin
       print_endline ("error when evaluating ... "^(pp x));
@@ -334,7 +336,7 @@ and eval_c env x =
         print_endline ("unknown identifier: "^(pp x));
         env,NIL
       end
-
+*)
 and eval_path env = function
   | Symb x -> env, lookup env x
   | Path(Symb x,y) -> eval_path (env_of_cell (lookup env x)) y
@@ -342,7 +344,10 @@ and eval_path env = function
 
 and app_eval env f args =
   match f with
-  | Subr cf -> cf env args 
+  | Subr (F1 cf) -> cf (snd (eval_c env (car args))) 
+  | Subr (F2 cf) -> 
+      cf (snd (eval_c env (car args))) (snd (eval_c env (cadr args)))
+  | Subr (Fn cf) -> cf env args
   | Path(_,_) -> let ne, f = eval_path env f in app_eval ne f args 
   | Symb s -> app_eval env (lookup env s) args
   | Closure(params, l,  expr) -> apply_c env expr l params args
