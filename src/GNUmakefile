@@ -28,7 +28,7 @@ OCAMLYACC=ocamlyacc
 
 INCLUDES=-I $(OBJ_DIR) -I $(OCAML_LIB_DIR) # all relevant -I options here
 OCAMLFLAGS=$(INCLUDES) -g # add other options for ocamlc here
-OCAMLOPTFLAGS=-w Ae $(INCLUDES) # add other options for ocamlopt here
+OCAMLOPTFLAGS= -w Ae $(INCLUDES) # add other options for ocamlopt here
 OCAMLOPTLINK=$(OCAMLOPTFLAGS)
 
 
@@ -88,7 +88,7 @@ build: clean depend
 native: $(CMX_FILES)
 	@echo ""
 	@echo "**** Executable generation ****"
-	$(OCAMLOPT) -o $(EXEC_FILE) $(OCAMLOPTLINK) $(OCAML_NAT_LIB_DEPS) $(CMX_COMPILE)
+	$(OCAMLOPT) -o $(EXEC_FILE) -inline 50 $(PROFILE) $(OCAMLOPTLINK) $(OCAML_NAT_LIB_DEPS) $(CMX_COMPILE)
 	@echo ""
 	@echo "*********************************************************"
 	@echo "**** THE APPLICATION HAS BEEN SUCCESSFULLY GENERATED ****"
