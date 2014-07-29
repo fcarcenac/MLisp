@@ -50,7 +50,8 @@ let toplevel () =
         print_string "= ";
         Term.print s 
       with 
-      | Term.Error -> ()
+      | Term.Error -> Term.error2 "found an error" term
+      | Not_found -> Term.error2 "unknown symbol" term
       | Stack_overflow -> print_endline "stack overflow ...")
  done
 
