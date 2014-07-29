@@ -36,62 +36,48 @@ let rec quasiquote env n y =
     | Quasiquote y -> quasiquote env (n+1) y
 
 and unquote env n y = 
-  if n != 0 then quasiquote env n y else let _,e = eval_c env y in e
+  if n != 0 then quasiquote env n y else snd (eval_c env y)
 
-
-let rec eval_c env x = 
-  try
+let rec eval_c env x =
     match x with
     | NIL | TRUE | Nb _ | Str _ | Port _ 
-    | Env _ | Subr _ | Closure _ -> 
-        env, x
+    | Env _ | Subr _ | Closure _ -> env, x
     | Symb s -> env, lookup env s
-    | Path (_,_) as x-> eval_path env x
+    | Path(_,_) as x -> eval_path env x
     | If(c,t,e) ->
-        begin
-          match (eval_c env c) with
-          | _, NIL -> eval_c env e
-          | _,_ -> eval_c env t
-        end
+        if (snd (eval_c env c)) == TRUE then eval_c env t else eval_c env e
     | Quote y -> env, y
     | Quasiquote y -> env, quasiquote env 1 y
     | Cons(car, cdr) -> env, app_eval env car cdr
     | _ -> assert false
-  with 
-  | Error -> 
-    begin
-      print_endline ("error when evaluating ... "^(pp x));
-      env,NIL
-    end
-  | Not_found ->
-      begin
-        print_endline ("unknown identifier: "^(pp x));
-        env,NIL
-      end
 
 and eval_path env = function
   | Symb x -> env, lookup env x
   | Path(Symb x,y) -> eval_path (env_of_cell (lookup env x)) y
-  | x -> error2 "incorrect symbol" x 
+  | x -> error2 "unknown symbol: " x 
 
 and app_eval env f args =
   match f with
-  | Subr cf -> cf env args 
-  | Path _ -> let ne, f = eval_path env f in app_eval ne f args 
   | Symb s -> app_eval env (lookup env s) args
+  | Subr (F1 cf) -> cf (snd (eval_c env (car args))) 
+  | Subr (F2 cf) -> 
+      cf (snd (eval_c env (car args))) (snd (eval_c env (cadr args)))
+  | Subr (Fn cf) -> cf env args
   | Closure(params, l, expr) -> apply_c env expr l params args
+  | Path _ -> let ne, f = eval_path env f in app_eval ne f args 
   | _ -> Cons(f, args)
 
 and apply_c env expr l params args =
   let rec f acc1 p a =
     match p, a with
-    | [], NIL -> bind env expr acc1
-    | [], _ -> error "too many arguments"
-    | _, NIL -> Closure(p, acc1, expr)
+    | _, NIL -> 
+        if p==[] then bind env expr acc1 else Closure(p, acc1, expr)
     | (Symb x) :: y, Cons(a,b) ->
         let c = { value = snd (eval_c env a) ; plist = PList.empty } in
         f ((x.E.i,c)::acc1) y b 
-    | _ -> assert false in
+    | _ -> 
+        if p == [] then error "too many arguments"
+        else assert false in
   f l params args
 
 and bind env exp l =
@@ -99,41 +85,42 @@ and bind env exp l =
     match l with
     | [] -> apply env exp acc
     | (id,c)::tl ->
-        E.O.A.set env.E.values id (c :: (E.O.A.get env.E.values id));
-        f tl (id::acc) in
+        let v = E.O.A.get env.E.values id in
+        E.O.A.set env.E.values id (c :: v);
+        f tl ((id,v)::acc)
+  in
   f l []
 
-and apply env exp l = 
-  let _, ne = eval_c env exp in pop_list env ne l
+and apply env exp l = pop_list env (snd (eval_c env exp)) l
+
 
 and pop_list env e = function
   | [] -> e
-  | id::tl ->
-      (match E.O.A.get env.E.values id with
-      | _::l -> E.O.A.set env.E.values id l
-      | _ -> assert false);
+  | (id,v)::tl -> 
+      E.O.A.set env.E.values id v;
       pop_list env e tl
 
 and eval env x = snd (eval_c env x)
-and do_quote _ t = car t
+
+let do_quote t = car t
 
 (* ************************************************************************** *)
 (* PROPERTY LIST functions *)
-and do_addprop env t =
+let do_addprop env t =
   let x, y, z = eval env (car t), eval env (cadr t), eval env (caddr t) in
   addprop env (symb_of_cell x) (symb_of_cell y) z;
   z
 
-and do_getprop env t =
+let do_getprop env t =
   let x, y = eval env (car t), eval env (cadr t) in
   getprop env (symb_of_cell x) (symb_of_cell y) 
 
-and do_remprop env t =
+let do_remprop env t =
   let x, y = eval env (car t), eval env (cadr t) in
   remprop env (symb_of_cell x) (symb_of_cell y);
   x
 
-and do_plist env t =  
+let do_plist env t =  
   let _,x = eval_c env (car t) in
   let l = Term.PList.bindings (lookup_plist env (symb_of_cell x)) in
   Misc.fold 
@@ -141,15 +128,14 @@ and do_plist env t =
     (Misc.reverse l) 
     NIL
 
-and do_set_plist env t =
+let do_set_plist env t =
   let x,l = symb_of_cell (eval env (car t)), eval env (cadr t) in
   let rec loop l =
-    if is_null l then ()
-    else 
-      begin
+    match l with 
+    | NIL -> ()
+    | _   -> 
         addprop env x (symb_of_cell (car l)) (cadr l);
         loop (cddr l)
-      end
   in
   rstprop env x;
   loop l;
@@ -157,7 +143,7 @@ and do_set_plist env t =
   
 (* ************************************************************************** *)
 (* BINDING functions *)
-and def_rec x e env =
+let rec def_rec x e env =
   match x with
   | Path(x,y) -> 
       let env' = 
@@ -171,7 +157,7 @@ and def_rec x e env =
   | _ -> error2 "expected to be a path or a symbol" x 
   
 (* 'let' definition : "(let (x v) expr)" *)
-and  do_let env t =
+let  do_let env t =
   let rec f acc = function
     | Cons(e,NIL) -> bind env e acc 
     | Cons(Cons(Symb x,Cons(y,NIL)),tl) ->
@@ -181,7 +167,7 @@ and  do_let env t =
   f [] t
 
 (* 'setq' definition *)
-and do_setq env t =
+let do_setq env t =
   match t with
   | Cons(label, Cons(e,NIL)) ->
       let _,expr = eval_c env e in
@@ -190,17 +176,17 @@ and do_setq env t =
   | _ -> error2 "incompatible argument" t
 
 (* 'set' definition *)
-and do_set env t =
+let do_set env t =
   let label = eval env (car t) and expr = eval env (cadr t) in
   def_rec label expr env;
   expr
 
-and do_define env t = 
+let do_define env t = 
   let label = car t and expr = eval env (cadr t) in
   def_rec label expr env;
   label
 
-and do_defun env t =
+let do_defun env t =
   let label = car t and args = cadr t and body = caddr t in
   let expr = Closure(unbox args, [], body) in
   def_rec label expr env;
@@ -209,127 +195,85 @@ and do_defun env t =
 (* ************************************************************************** *)
 (* EQUALITY function *)
 
-and cell_of_bool c = if c then TRUE else NIL
+let cell_of_bool c = if c then TRUE else NIL
 
-and do_equal env l =
-  let o1, o2 = eval env (car l), eval env (cadr l) in
-  if is_null (cddr l) then if o1=o2 then TRUE else NIL
-  else error "'eq?' is given too many arguments"
+let do_equal o1 o2 = if o1=o2 then TRUE else NIL
 
-and do_eq env = function
-  | Cons(x,Cons(y,NIL)) ->
-    (match eval_c env x, eval_c env y with
-    | (_,NIL), (_,NIL) -> TRUE
-    | (_,Nb s), (_,Nb t) -> if s==t then TRUE else NIL
-    | (_,Symb s), (_,Symb t) -> if s==t then TRUE else NIL
-    | (_,Str s), (_,Str t) -> if s==t then TRUE else NIL
-    | (_,s),(_,t) -> if s==t then TRUE else NIL)
-  | _ -> error ("'eq?' is a binary operator")
+let do_eq a b = 
+  match a, b with
+  | NIL, NIL -> TRUE
+  | Nb s, Nb t -> if s==t then TRUE else NIL
+  | Symb s, Symb t -> if s==t then TRUE else NIL
+  | Str s, Str t -> if s==t then TRUE else NIL
+  | _ -> if a==b then TRUE else NIL
 
 
 (* ************************************************************************** *)
 (* COMPARISON Predicates *)
-and do_gt env = function
-  | Cons(x,Cons(y,NIL)) ->
-      (match eval_c env x, eval_c env y with
-      | (_,Nb x),(_,Nb y) -> if (x:int)>(y:int) then TRUE else NIL
-      | _, _ -> error "Relational operator apply on num values") 
-  | t -> error2 "Relational operators are binary operators" t
+let do_gt a b = 
+  match a, b with
+  | Nb x,Nb y -> if (x:int)<=(y:int) then NIL else TRUE
+  | _, _ -> error "Relational operator apply on num values"
 
-and do_gte env = function
-  | Cons(x,Cons(y,NIL)) ->
-      (match eval_c env x, eval_c env y with
-      | (_,Nb x), (_,Nb y) -> if (x:int)>=(y:int) then TRUE else NIL
-      | _, _ -> error "Relational operator apply on num values") 
-  | t -> error2 "Relational operators are binary operators" t
+let do_gte a b =
+  match a, b with
+  | Nb x, Nb y -> if (x:int)>=(y:int) then TRUE else NIL
+  | _, _ -> error "Relational operator apply on num values"
 
-and do_lt env = function
-  | Cons(x,Cons(y,NIL)) ->
-      (match eval_c env x, eval_c env y with
-      | (_,Nb x), (_,Nb y) -> if (x:int)<(y:int) then TRUE else NIL
-      | _, _ -> error "Relational operator apply on num values") 
-  | t -> error2 "Relational operators are binary operators" t
+let do_lt a b = 
+  match a, b with
+  | Nb x, Nb y -> if (x:int)>=(y:int) then NIL else TRUE
+  | _, _ -> error "Relational operator apply on num values"
 
-and do_lte env = function
-  | Cons(x,Cons(y,NIL)) ->
-      (match eval_c env x, eval_c env y with
-      | (_,Nb x), (_,Nb y) -> if (x:int)<=(y:int) then TRUE else NIL
-      | _, _ -> error "Relational operator apply on num values") 
-  | t -> error2 "Relational operators are binary operators" t
+let do_lte a b =
+  match a, b with
+  | Nb x, Nb y -> if (x:int)<=(y:int) then TRUE else NIL
+  | _, _ -> error "Relational operator apply on num values" 
 
 (* ************************************************************************** *)
 (* BASIC "typing" Predicates *)
 
-and do_nump env t =
-  if is_unary t then cell_of_bool (is_num (eval env (car t)))
-  else error "'num?' is given too many arguments"
-
-and do_consp env t =
-  if is_unary t then cell_of_bool (is_cons (eval env (car t)))
-  else error "'cons?' is given too many arguments"
-and do_stringp env t =
-  if is_unary t then cell_of_bool (is_string (eval env (car t)))
-  else error "'string?' is given too many arguments"
-and do_symbp env t =
-  if is_unary t then cell_of_bool (is_symb (eval env (car t)))
-  else error "'symb?' is given too many arguments"
-and do_nullp env = function
-  | Cons(x,NIL) -> 
-      (match (eval_c env x) with
-      | _, NIL -> TRUE
-      | _ -> NIL)
-  | t -> error2 "'null?' unary function" t
-and do_envp env = function
-  | Cons(x,NIL) -> cell_of_bool (is_env (eval env x))
-  | t -> error2 "too many arguments" t
+let do_nump t = cell_of_bool (is_num t)
+let do_consp t = cell_of_bool (is_cons t)
+let do_stringp t = cell_of_bool (is_string t)
+let do_symbp t = cell_of_bool (is_symb t)
+let do_nullp = function | NIL -> TRUE | _ -> NIL
+let do_envp x = cell_of_bool (is_env x)
 
 (* ************************************************************************** *)
 (* LISTS function *)
 
 (* CONS, CAR, CDR subr *)
-and do_cons env t =
-  match t with
-  | Cons(x,Cons(y,NIL)) -> Cons(eval env x,eval env y)
-  | _ -> error2 "'cons' - incompatible arguments" t
-and do_car env = function
-  | Cons(x, _) -> 
-      (match eval_c env x with
-      | _, Cons(a,_) -> a
-      | _, NIL -> NIL
-      | _, y -> error2 "not a cons cell" y)
-  | _ -> error "unary operator"
-and do_cdr env = function
-  | Cons(x, _) -> 
-      (match eval_c env x with
-      | _, Cons(_,a) -> a
-      | _, NIL -> NIL
-      | _, y -> error2 "not a cons cell" y)
-  | _ -> error "unary operator"
+let do_cons x y = Cons(x,y)
+let do_car = car
+let do_cdr = cdr
 
-and do_list env t =
+let do_list env t =
   let rec cons acc t =
     if is_null t then Misc.fold (fun t a -> mk_cons t a) acc NIL
     else cons ((eval env (car t))::acc) (cdr t) in
   cons [] t
 
-and do_nth env t =
+let do_nth env t =
   let rec find n l =
     if is_null l then error "out of bound access"
     else 
       if n=0 then car l else find (n-1) (cdr l) 
   in find (int_of_cell (eval env (car t))) (eval env (cadr t))
 
-and do_map env t =
+let do_map env t =
   let f = eval env (car t) and l = eval env (cadr t) in
   let rec map0 f l =
-    if is_null l then NIL
-    else Cons(eval env (Cons(f,Cons(car l,NIL))),map0 f (cdr l))
+    match l with
+    | NIL -> NIL
+    | Cons(car,cdr) -> Cons(eval env (Cons(f,Cons(car,NIL))),map0 f cdr)
+    | _ -> assert false
   in map0 f l
 
 (* ************************************************************************** *)
 (* ARITHMETIC *)
 
-and add env acc = function
+let rec add env acc = function
   | NIL -> acc
   | Cons(x,l) -> 
       (match eval_c env x with
@@ -337,23 +281,17 @@ and add env acc = function
       | _, _ -> error2 "expected a number" x)
   | t -> error2 "incompatible argument" t
 
-and do_plus env t = Nb (add env 0 t)
+let do_plus env t = Nb (add env 0 t)
 
-and do_succ env = function
-  | Cons(x,NIL) ->
-      (match eval_c env x with
-      | _, Nb n -> Nb(succ n)
-      | _, _ -> error2 "num type expected" x)
-  | t -> error2 "'succ' arity error" t
+let do_succ = function
+  | Nb n -> Nb(succ n)
+  | x -> error2 "num type expected" x
 
-and do_pred env = function
-  | Cons(x,NIL) ->
-      (match eval_c env x with
-      | _, Nb n -> Nb(pred n)
-      | _, _ -> error2 "num type expected" x)
-  | t -> error2 "'pred' arity error" t
+let do_pred = function
+  | Nb n -> Nb(pred n)
+  | x -> error2 "num type expected" x
 
-and do_minus env t =
+let do_minus env t =
     match t with
     | Cons(x,l) ->
         (match eval_c env x with
@@ -361,20 +299,20 @@ and do_minus env t =
         | _, _ -> error2 "expected a number" x)
     | _ -> error2 "expected at least 2 args" t 
 
-and do_mult env t = 
+let do_mult env t = 
   let rec mult t acc =
     if is_null t then acc
     else mult (cdr t) ((int_of_cell (eval env (car t))) * acc)
   in Nb (mult t 1)
 
-and do_div env t =
+let do_div env t =
   let den = int_of_cell (do_mult env (cdr t)) in
   if den==0 then 
     error "div by zero" 
   else Nb ((int_of_cell (eval env (car t)))/den)
 
 (*
-and do_mod t = 
+let do_mod t = 
   let o1, o2 = car t, cadr t in
   if is_binary t then Nb ((int_of_cell o1) mod (int_of_cell))
   else error "'mod' is given too many arguments"
@@ -383,7 +321,7 @@ and do_mod t =
 (* ************************************************************************** *)
 (* BOOLEAN *)
 
-and do_and env t = 
+let do_and env t = 
   let rec doand = function
     | NIL -> TRUE
     | Cons(x,y) ->
@@ -393,7 +331,7 @@ and do_and env t =
     | t -> error2 "unexpected argument" t 
   in doand t
 
-and do_or env t =
+let do_or env t =
   let rec door = function
     | NIL -> NIL
     | Cons(x,y) ->
@@ -403,13 +341,13 @@ and do_or env t =
     | t -> error2 "unexpected argument" t 
   in door t
 
-and do_not env = function
+let do_not env = function
   | Cons(x,NIL) -> if (eval env x) == NIL then TRUE else NIL
   | t -> error2 "unexpected argument" t
 
 (* ************************************************************************** *)
 (* STRINGS *)
-and do_cat env t =
+let do_cat env t =
   let rec docat t acc =
     if is_null t then acc
     else docat (cdr t) (acc^(string_of_cell (eval env (car t)))) in
@@ -419,7 +357,7 @@ and do_cat env t =
 (* ************************************************************************** *)
 (* Imperative-style SEQUENCING *)
 
-and do_seq env t =
+let do_seq env t =
   let rec f t =
     if (is_null (cdr t)) then eval env (car t)
     else 
@@ -432,12 +370,12 @@ and do_seq env t =
 
 (* ************************************************************************** *)
 (* While Loop *)
-and iterate env c e acc =
+let rec iterate env c e acc =
   match (eval_c env c) with
   | _, NIL -> acc
   | _, _ -> iterate env c e (eval env e)
 
-and do_while env t =
+let do_while env t =
   match t with
   | Cons(c, Cons (e, NIL)) ->
       iterate env c e NIL
@@ -446,7 +384,7 @@ and do_while env t =
 (* ************************************************************************** *)
 (* IO *)
 
-and do_println env t =
+let do_println env t =
   let rec f t acc = 
     if is_null (cdr t) then 
       begin
@@ -457,7 +395,7 @@ and do_println env t =
     else f (cdr t) (acc^(pp' (eval env (car t)))) in
   f t ""
 
-and do_print env t =
+let do_print env t =
    let rec f t acc = 
     if is_null (cdr t) then 
       begin
@@ -468,7 +406,7 @@ and do_print env t =
     else f (cdr t) (acc^(pp' (eval env (car t)))) in
   f t ""
 
-and do_write env t =
+let do_write env t =
   let p = eval env (car t) in
   let s = eval env (cadr t) in
   if is_output_port p then
@@ -485,7 +423,7 @@ and do_write env t =
     else error2 "expected to be a string" s
   else error2 "expected to be an output-port" p
 
-and do_open_input_file env t =
+let do_open_input_file env t =
   let fn = string_of_cell (eval env (car t)) in
   let p = 
     let c = open_in fn in
@@ -493,12 +431,12 @@ and do_open_input_file env t =
     Port(Input(fn,lb,Some c)) in
   p
 
-and do_open_input_string env t =
+let do_open_input_string env t =
   let s = string_of_cell (eval env (car t)) in
   let lb = Lexing.from_string s in
   Port(Input("",lb,None))
 
-and do_close_input_file env t =
+let do_close_input_file env t =
   let p = eval env (car t) in
   if is_input_file p then
     begin
@@ -508,20 +446,20 @@ and do_close_input_file env t =
     end
   else error2 "expected to be an input_port" (car t)
 
-and do_open_output_file env t =
+let do_open_output_file env t =
   let fn = string_of_cell (eval env (car t)) in
   let p = 
     let c = open_out fn in
     Port(Output(fn,None,Some c)) in
   p
 
-and do_open_output_string env t =
+let do_open_output_string env t =
   let s = string_of_cell (eval env (car t)) in
   let buf = Buffer.create 80 in
   Buffer.add_string buf s;
   Port(Output("",Some buf,None))
 
-and do_flush_output_string env t =
+let do_flush_output_string env t =
   let p = eval env (car t) in
   if is_output_string p then
     begin
@@ -531,7 +469,7 @@ and do_flush_output_string env t =
     end
   else error2 "expected to be an output-string" (car t)
 
-and do_get_output_string env t =
+let do_get_output_string env t =
   let p = eval env (car t) in
   if is_output_string p then
     begin
@@ -540,7 +478,7 @@ and do_get_output_string env t =
     end
   else error2 "expected to be an output-string" (car t)
 
-and do_close_output_file env t =
+let do_close_output_file env t =
   let p = eval env (car t) in
   if is_output_file p then
     begin
@@ -550,7 +488,7 @@ and do_close_output_file env t =
     end
   else error2 "expected to be an input_port" (car t)
 
-and do_read env t = 
+let do_read env t = 
     if is_null t then Lexer.build_object !Globals.current_channel
     else 
       let _,lb,_ = 
@@ -559,7 +497,7 @@ and do_read env t =
         else error2 "expected to be an input port" p 
       in Lexer.build_object_lex lb
 
-and do_read_line env t =
+let do_read_line env t =
   let _,_,c = 
     let p = eval env (car t) in
     if is_input_port p then get_input_port p 
@@ -569,7 +507,7 @@ and do_read_line env t =
 (* ************************************************************************** *)
 (* ENVIRONMENT *)
 
-and do_make_env env t =
+let do_make_env env t =
   let e = eval env (car t) in
   if is_symb e then 
     begin
@@ -586,24 +524,20 @@ and do_make_env env t =
       end
     else error2 "expected to be a symbol or environment expression" (car t)
 
-and do_in_env env t =
+let do_in_env env t =
   let e = eval env (car t) in
   let env' = 
     if is_env e then env_of_cell e else error2 "expected to be an env" e in
   current_env := env';
   TRUE
 
-and do_symbols env t =
+let do_symbols t =
   let f l = Misc.fold (fun k l' -> Cons(Symb k, l')) (Misc.reverse l) NIL in
-  let e = eval env (car t) in
-  let env' = 
-    if is_env e then env_of_cell e
-    else error2 "expected to be an environment" e 
-  in f (Env.symbols env')
+  f (Env.symbols (env_of_cell t))
 
 (* ************************************************************************** *)
 (* EVALUATION *)
-and do_eval env t =
+let do_eval env t =
   let _, res =
     match t with
     | Cons(Quote x,_) -> eval_c env x
@@ -613,7 +547,7 @@ and do_eval env t =
 
 (* ************************************************************************** *)
 (* EXECUTION TIME *)
-and do_time env t =
+let do_time env t =
   let t1 = Sys.time() in
   let r = eval env (car t) in
   let t2 = Sys.time () in
@@ -622,17 +556,23 @@ and do_time env t =
 
 (* ************************************************************************** *)
 (* Shell Command *)
-and do_exec env t =
+let do_exec env t =
   Nb (Sys.command (string_of_cell (eval env (car t))))
   
 (* ************************************************************************** *)
 (* EXIT *)
-and do_exit _ _ = raise End_of_file
+let do_exit _ _ = raise End_of_file
 
 (* ************************************************************************** *)
 (* PERVASIVES *)
 let add_subr s f = 
-  extend_global (Env.symbol !current_env s) (Subr f) !current_env
+  extend_global (Env.symbol !current_env s) (Subr (Fn f)) !current_env
+
+let add_subr1 s f = 
+  extend_global (Env.symbol !current_env s) (Subr (F1 f)) !current_env
+
+let add_subr2 s f = 
+  extend_global (Env.symbol !current_env s) (Subr (F2 f)) !current_env
 
 let intern s =
   extend_global (Env.symbol !current_env s) NIL !current_env
@@ -643,32 +583,32 @@ let init_global () =
     (Env !current_env)
     !current_env;
   add_subr "in-package" do_make_env;
-  add_subr "symbols" do_symbols;
+  add_subr1 "symbols" do_symbols;
   add_subr "define" do_define;
   add_subr "defun" do_defun;
-  add_subr "quote" do_quote;
+  add_subr1 "quote" do_quote;
   add_subr "eval" do_eval;
   add_subr "set" do_set;
   add_subr "setq" do_setq;
   add_subr "let" do_let;
-  add_subr "eq?" do_eq;
-  add_subr "equal?" do_equal;
-  add_subr "num?" do_nump;
-  add_subr "cons" do_cons;
-  add_subr "car" do_car;
-  add_subr "cdr" do_cdr;
+  add_subr2 "eq?" do_eq;
+  add_subr2 "equal?" do_equal;
+  add_subr1 "num?" do_nump;
+  add_subr2 "cons" do_cons;
+  add_subr1 "car" do_car;
+  add_subr1 "cdr" do_cdr;
   add_subr "nth" do_nth;
   add_subr "list" do_list;
   add_subr "map" do_map;
-  add_subr "null?" do_nullp;
+  add_subr1 "null?" do_nullp;
   add_subr "+" do_plus;
   add_subr "-" do_minus;
   add_subr "*" do_mult;
   add_subr "/" do_div;
-  add_subr ">" do_gt;
-  add_subr "<" do_lt;
-  add_subr ">=" do_gte;
-  add_subr "<=" do_lte;
+  add_subr2 ">" do_gt;
+  add_subr2 "<" do_lt;
+  add_subr2 ">=" do_gte;
+  add_subr2 "<=" do_lte;
   add_subr "and" do_and;
   add_subr "or" do_or;
   add_subr "not" do_not;
@@ -697,5 +637,5 @@ let init_global () =
   add_subr "rem-prop" do_remprop;
   add_subr "get-plist" do_plist;
   add_subr "set-plist" do_set_plist;
-  add_subr "succ" do_succ;
-  add_subr "pred" do_pred;;
+  add_subr1 "succ" do_succ;
+  add_subr1 "pred" do_pred;;
