@@ -35,14 +35,18 @@ and cell =
   | Symb of E.t_symbol
   | NIL
   | Subr of subr (*(ext_cell E.ext_t -> cell -> cell)*)
-  | Cons of cell * cell
+  | Cons of ccell
   | Closure of cell list * (int * ext_cell) list * cell
+
+and ccell = { mutable car: cell ; mutable cdr: cell }
 
 and port =
   | Input of string * Lexing.lexbuf * in_channel option
   | Output of string * Buffer.t option * out_channel option
 
 and ext_cell = {value : cell ; plist : cell PList.t}
+
+exception Unknown of cell
 
 (* ************************************************************************** *)
 (* TYPE CHECKING functions *)
@@ -182,7 +186,6 @@ let mk_cons c l = Cons (c, l)
 (* Environment management *)
 let init_env = (E.init 769 769 0 "MAIN": ext_cell E.ext_t)
 let current_env = ref init_env 
-let copy_env = E.copy
 
 let extend_local x y g = E.add g x {value = y ; plist = PList.empty}
 
@@ -310,10 +313,10 @@ and compile env x =
 *)
 
 and eval_c env x =
-(*  try*)
+  try
     match x with
     | NIL | TRUE | Nb _ | Str _ | Port _ | Env _ | Subr _ | Closure _ -> env, x
-    | Symb x -> env, lookup env x
+    | Symb s -> env, lookup env s
     | Path(_,_) -> eval_path env x
     | Quote y -> env, y
     | Quasiquote y -> env, quasiquote env 1 y
@@ -325,7 +328,7 @@ and eval_c env x =
         end
     | Cons(car, cdr) -> env, app_eval env car cdr
     | _ -> error2 "invalid expression" x
-(*  with 
+  with 
   | Error -> 
     begin
       print_endline ("error when evaluating ... "^(pp x));
@@ -336,7 +339,7 @@ and eval_c env x =
         print_endline ("unknown identifier: "^(pp x));
         env,NIL
       end
-*)
+
 and eval_path env = function
   | Symb x -> env, lookup env x
   | Path(Symb x,y) -> eval_path (env_of_cell (lookup env x)) y
