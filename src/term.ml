@@ -34,11 +34,13 @@ and cell =
   | If of cell * cell * cell
   | Symb of E.t_symbol
   | NIL
-  | Subr of subr (*(ext_cell E.ext_t -> cell -> cell)*)
-  | Cons of ccell
+  | Subr of subr 
+  | Cons of cell * cell
   | Closure of cell list * (int * ext_cell) list * cell
 
+(*
 and ccell = { mutable car: cell ; mutable cdr: cell }
+*)
 
 and port =
   | Input of string * Lexing.lexbuf * in_channel option
