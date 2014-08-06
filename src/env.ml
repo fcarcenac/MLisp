@@ -7,14 +7,8 @@ type t_symbol = {name : string; i: int; scope: int}
 let name s = s.name
 let id s = s.i
 let scope s = s.scope
-(*
-let pp s =
-  let pp_n = "{name = "^s.name
-  and pp_i = " ; id = "^(string_of_int s.i)
-  and pp_sc = " ; scope = "^(string_of_int s.scope) in
-  pp_n^pp_i^pp_sc
-*)
 
+(* Symbols tables module *)
 module Symb = struct
   type t_hashed = int * string
   let hash = Hashtbl.hash
@@ -49,7 +43,7 @@ module O = struct
   
   let replace t i e = 
     match (A.get t i) with
-    | _::tl -> A.set t i (e::tl)
+    | _ :: tl -> A.set t i (e::tl)
     | _ -> () 
   
   let remove t i =
@@ -77,12 +71,6 @@ type 'a ext_t =
     values : ('a O.t_array);
     chain : (('a ext_t) ref) list }
 
-(*
-let pp_env e = 
-  "env id = "^(string_of_int e.id)^"\n"^
-  "env chain = "
-    ^(Misc.fold (fun i acc -> acc^(string_of_int i)^" ") e.chain "[")^"]\n"
-*)
 
 let init st vt s n = 
   {id = s ; 
@@ -91,24 +79,57 @@ let init st vt s n =
   values = O.create vt ; 
   chain = []}
 
+let e_child env st vt s =
+  { id = s.i ;
+    e_name = s.name ;
+    symbols = S.create st ;
+    values = O.create vt ;
+    chain = (ref env) :: env.chain }
+
 let env_id e = e.id
 let env_name e = e.e_name
 let s_table e = (e.symbols)
 let v_table e = (e.values)
 let chain e = e.chain
-let find d x = O.find d.values x.i
-let find_id d i = O.find d.values i
 
-let create env s = 
+let rec find_rec d x =
+  match O.A.get d.values x.i, d.chain with
+  | e :: _, _ -> e
+  | _, e :: _ -> find_rec !e x
+  | _, _ -> raise Not_found
+
+let find d x = 
+  match O.A.get d.values x.i with
+  | e :: _ -> e
+  | _ -> raise Not_found
+
+let e_inherit env s = 
   { id = s.i ; 
     e_name = s.name ;
     symbols = S.create 93 ; 
     values = env.values ; 
     chain = (ref env)::env.chain }
 
+let add d x e = 
+  let vals = d.values in 
+  O.A.set vals x.i (e::(O.A.get vals x.i))
+
+let replace d x e = 
+  match (O.A.get d.values x.i) with
+  | _ :: tl -> O.A.set d.values x.i (e::tl)
+  | _ -> () 
+  
+let remove d x =
+  match (O.A.get d.values x.i) with
+  | _::tl -> O.A.set d.values x.i tl
+  | _ -> ()
+
+(*
 let add d x = O.add d.values x.i
 let remove d x = O.remove d.values x.i
 let replace d x = O.replace d.values x.i
+*)
+
 let symbols d = S.values d.symbols
 
 let copy e =

@@ -38,14 +38,14 @@ let rec quasiquote env n y =
 and unquote env n y = 
   if n != 0 then quasiquote env n y else snd (eval_c env y)
 
-let rec eval_c env x =
+and eval_c env x =
     match x with
     | NIL | TRUE | Nb _ | Str _ | Port _ 
     | Env _ | Subr _ | Closure _ -> env, x
-    | Symb s -> env, lookup env s
+    | Symb s -> env, full_lookup env s
     | Path(_,_) as x -> eval_path env x
     | If(c,t,e) ->
-        if (snd (eval_c env c)) == TRUE then eval_c env t else eval_c env e
+        if (snd (eval_c env c)) = TRUE then eval_c env t else eval_c env e
     | Quote y -> env, y
     | Quasiquote y -> env, quasiquote env 1 y
     | Cons(car, cdr) -> env, app_eval env car cdr
@@ -53,12 +53,13 @@ let rec eval_c env x =
 
 and eval_path env = function
   | Symb x -> env, lookup env x
-  | Path(Symb x,y) -> eval_path (env_of_cell (lookup env x)) y
-  | x -> error2 "unknown symbol: " x 
+  | Path(Symb x,y) -> 
+      eval_path (env_of_cell (lookup env x)) y
+  | _ -> assert false
 
 and app_eval env f args =
   match f with
-  | Symb s -> app_eval env (lookup env s) args
+  | Symb s -> app_eval env (full_lookup env s) args
   | Subr (F1 cf) -> cf (snd (eval_c env (car args))) 
   | Subr (F2 cf) -> 
       cf (snd (eval_c env (car args))) (snd (eval_c env (cadr args)))
@@ -71,19 +72,21 @@ and apply_c env expr l params args =
   let rec f acc1 p a =
     match p, a with
     | _, NIL -> 
-        if p==[] then bind env expr acc1 else Closure(p, acc1, expr)
+        if p = [] 
+        then bind env expr acc1 
+        else Closure(p, acc1, expr)
     | (Symb x) :: y, Cons(a,b) ->
         let c = { value = snd (eval_c env a) ; plist = PList.empty } in
         f ((x.E.i,c)::acc1) y b 
     | _ -> 
-        if p == [] then error "too many arguments"
-        else assert false in
+        if p = [] then error "too many arguments" else assert false 
+  in
   f l params args
 
 and bind env exp l =
   let rec f l acc =
     match l with
-    | [] -> apply env exp acc
+    | [] -> (*snd (eval_c env exp)*) apply env exp acc
     | (id,c)::tl ->
         let v = E.O.A.get env.E.values id in
         E.O.A.set env.E.values id (c :: v);
@@ -145,12 +148,14 @@ let do_set_plist env t =
 (* BINDING functions *)
 let rec def_rec x e env =
   match x with
-  | Path(x,y) -> 
+  | Path(Symb s,y) -> 
       let env' = 
-        try (env_of_cell (eval env x))
+        try 
+          print_endline "@@";
+          (env_of_cell (eval env x))
         with Error -> 
-          let env' = E.create !current_env (symb_of_cell x) in
-          extend_global (symb_of_cell x) (Env env') env;
+          let env' = E.e_child !current_env 769 769 s in
+          extend_global s (Env env') env;
           env' in
       def_rec y e env' 
   | Symb nx -> extend_global nx e env
@@ -511,7 +516,7 @@ let do_make_env env t =
   let e = eval env (car t) in
   if is_symb e then 
     begin
-      let env' = Env (E.create !current_env (symb_of_cell e)) in
+      let env' = Env (E.e_child !current_env 769 769 (symb_of_cell e)) in
       extend_global (symb_of_cell e) env' env;
       current_env := env_of_cell env';
       e
@@ -523,13 +528,6 @@ let do_make_env env t =
         car t
       end
     else error2 "expected to be a symbol or environment expression" (car t)
-
-let do_in_env env t =
-  let e = eval env (car t) in
-  let env' = 
-    if is_env e then env_of_cell e else error2 "expected to be an env" e in
-  current_env := env';
-  TRUE
 
 let do_symbols t =
   let f l = Misc.fold (fun k l' -> Cons(Symb k, l')) (Misc.reverse l) NIL in
