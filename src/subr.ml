@@ -36,57 +36,56 @@ let rec quasiquote env n y =
     | Quasiquote y -> quasiquote env (n+1) y
 
 and unquote env n y = 
-  if n != 0 then quasiquote env n y else snd (eval_c env y)
+  if n <> 0 then quasiquote env n y else eval env y
 
-and eval_c env x =
-    match x with
-    | NIL | TRUE | Nb _ | Str _ | Port _ 
-    | Env _ | Subr _ | Closure _ -> env, x
-    | Symb s -> env, full_lookup env s
-    | Path(_,_) as x -> eval_path env x
+and eval env = function
+    | (NIL | TRUE | Nb _ | Str _ | Port _ 
+    | Env _ | Subr _ | Closure _) as x -> x
+    | Quote y -> y
+    | Symb s -> full_lookup env s
+    | Path(_,_) as x -> snd (eval_path env x)
     | If(c,t,e) ->
-        if (snd (eval_c env c)) = TRUE then eval_c env t else eval_c env e
-    | Quote y -> env, y
-    | Quasiquote y -> env, quasiquote env 1 y
-    | Cons(car, cdr) -> env, app_eval env car cdr
+        if (eval env c) == TRUE then eval env t else eval env e
+    | Quasiquote y -> quasiquote env 1 y
+    | Cons(car, cdr) -> app_eval env cdr car
     | _ -> assert false
 
 and eval_path env = function
-  | Symb x -> env, lookup env x
-  | Path(Symb x,y) -> 
-      eval_path (env_of_cell (lookup env x)) y
+  | Symb x -> env, full_lookup env x
+  | Path(Symb x,y) -> eval_path (env_of_cell (lookup env x)) y
   | _ -> assert false
 
-and app_eval env f args =
-  match f with
-  | Symb s -> app_eval env (full_lookup env s) args
-  | Subr (F1 cf) -> cf (snd (eval_c env (car args))) 
-  | Subr (F2 cf) -> 
-      cf (snd (eval_c env (car args))) (snd (eval_c env (cadr args)))
-  | Subr (Fn cf) -> cf env args
+(* 
+ERROR to be fixed: 
+  when the function is defined by a path expression, the arguments are 
+  evaluated with the wrong environment.
+*)
+and app_eval env args = function
+  | Symb s -> app_eval env args (full_lookup env s)
+  | Subr f -> app_subr env args f
   | Closure(params, l, expr) -> apply_c env expr l params args
-  | Path _ -> let ne, f = eval_path env f in app_eval ne f args 
-  | _ -> Cons(f, args)
+  | (Path _) as f -> let ne, v = eval_path env f in app_eval ne args v
+  | f -> Cons(f, args)
 
-and apply_c env expr l params args =
-  let rec f acc1 p a =
-    match p, a with
-    | _, NIL -> 
-        if p = [] 
-        then bind env expr acc1 
-        else Closure(p, acc1, expr)
-    | (Symb x) :: y, Cons(a,b) ->
-        let c = { value = snd (eval_c env a) ; plist = PList.empty } in
-        f ((x.E.i,c)::acc1) y b 
-    | _ -> 
-        if p = [] then error "too many arguments" else assert false 
-  in
-  f l params args
+and app_subr env args = function
+  | F1 f -> f (eval env (car args))
+  | F2 f -> f (eval env (car args)) (eval env (cadr args))
+  | Fn f -> f env args
+
+and apply_c env expr l params args = 
+  match params, args with
+  | [], NIL -> bind env expr l 
+  | _ , NIL -> Closure(params, l, expr)
+  | (Symb x) :: y, Cons(a,b) ->
+      let c = { value = eval env a ; plist = PList.empty } in
+      apply_c env expr ((x.E.i,c)::l) y b 
+  | [], _ -> error "too many arguments" 
+  | _,_ -> assert false 
 
 and bind env exp l =
-  let rec f l acc =
-    match l with
-    | [] -> (*snd (eval_c env exp)*) apply env exp acc
+  let rec f l acc = 
+    match l with (*function*)
+    | [] -> apply env exp acc
     | (id,c)::tl ->
         let v = E.O.A.get env.E.values id in
         E.O.A.set env.E.values id (c :: v);
@@ -94,16 +93,14 @@ and bind env exp l =
   in
   f l []
 
-and apply env exp l = pop_list env (snd (eval_c env exp)) l
-
-
-and pop_list env e = function
+and apply env exp l = 
+  let e = eval env exp in
+  match l with
   | [] -> e
-  | (id,v)::tl -> 
+  | (id,v) :: tl -> 
       E.O.A.set env.E.values id v;
-      pop_list env e tl
-
-and eval env x = snd (eval_c env x)
+      (* pop args *)
+      apply env e tl
 
 let do_quote t = car t
 
@@ -124,7 +121,7 @@ let do_remprop env t =
   x
 
 let do_plist env t =  
-  let _,x = eval_c env (car t) in
+  let x = eval env (car t) in
   let l = Term.PList.bindings (lookup_plist env (symb_of_cell x)) in
   Misc.fold 
     (fun (x,y) a -> Cons(Symb x, Cons(y,a))) 
@@ -175,7 +172,7 @@ let  do_let env t =
 let do_setq env t =
   match t with
   | Cons(label, Cons(e,NIL)) ->
-      let _,expr = eval_c env e in
+      let expr = eval env e in
       def_rec label expr env;
       expr
   | _ -> error2 "incompatible argument" t
@@ -272,7 +269,7 @@ let do_map env t =
     match l with
     | NIL -> NIL
     | Cons(car,cdr) -> Cons(eval env (Cons(f,Cons(car,NIL))),map0 f cdr)
-    | _ -> assert false
+    | _ -> error2 "list expected" l
   in map0 f l
 
 (* ************************************************************************** *)
@@ -281,9 +278,9 @@ let do_map env t =
 let rec add env acc = function
   | NIL -> acc
   | Cons(x,l) -> 
-      (match eval_c env x with
-      | _, Nb n -> add env (n + acc) l
-      | _, _ -> error2 "expected a number" x)
+      (match eval env x with
+      | Nb n -> add env (n + acc) l
+      | _ -> error2 "expected a number" x)
   | t -> error2 "incompatible argument" t
 
 let do_plus env t = Nb (add env 0 t)
@@ -299,9 +296,9 @@ let do_pred = function
 let do_minus env t =
     match t with
     | Cons(x,l) ->
-        (match eval_c env x with
-        | _, Nb n -> Nb(n-(add env 0 l))
-        | _, _ -> error2 "expected a number" x)
+        (match eval env x with
+        | Nb n -> Nb(n-(add env 0 l))
+        | _ -> error2 "expected a number" x)
     | _ -> error2 "expected at least 2 args" t 
 
 let do_mult env t = 
@@ -330,8 +327,8 @@ let do_and env t =
   let rec doand = function
     | NIL -> TRUE
     | Cons(x,y) ->
-        (match eval_c env x with
-        | _,NIL -> NIL 
+        (match eval env x with
+        | NIL -> NIL 
         | _ -> doand y)
     | t -> error2 "unexpected argument" t 
   in doand t
@@ -340,15 +337,16 @@ let do_or env t =
   let rec door = function
     | NIL -> NIL
     | Cons(x,y) ->
-        (match eval_c env x with
-        | _, NIL -> door y 
-        | _,nx -> nx)
+        (match eval env x with
+        | NIL -> door y 
+        | nx -> nx)
     | t -> error2 "unexpected argument" t 
   in door t
 
-let do_not env = function
-  | Cons(x,NIL) -> if (eval env x) == NIL then TRUE else NIL
-  | t -> error2 "unexpected argument" t
+let do_not = function
+  | NIL -> TRUE 
+  | _   -> NIL
+
 
 (* ************************************************************************** *)
 (* STRINGS *)
@@ -376,15 +374,13 @@ let do_seq env t =
 (* ************************************************************************** *)
 (* While Loop *)
 let rec iterate env c e acc =
-  match (eval_c env c) with
-  | _, NIL -> acc
-  | _, _ -> iterate env c e (eval env e)
+  match (eval env c) with
+  | NIL -> acc
+  | _ -> iterate env c e (eval env e)
 
-let do_while env t =
-  match t with
-  | Cons(c, Cons (e, NIL)) ->
-      iterate env c e NIL
-  | _ -> error2 "expected 2 arguments" t
+let do_while env = function
+  | Cons(c, Cons (e, NIL)) -> iterate env c e NIL
+  | t -> error2 "expected 2 arguments" t
 
 (* ************************************************************************** *)
 (* IO *)
@@ -536,10 +532,10 @@ let do_symbols t =
 (* ************************************************************************** *)
 (* EVALUATION *)
 let do_eval env t =
-  let _, res =
+  let res =
     match t with
-    | Cons(Quote x,_) -> eval_c env x
-    | Cons(x,_) -> let _, y = eval_c env x in eval_c env y
+    | Cons(Quote x,_) -> eval env x
+    | Cons(x,_) -> let y = eval env x in eval env y
     | _ -> error2 "invalid argument" t in
   res
 
@@ -593,8 +589,8 @@ let init_global () =
   add_subr2 "equal?" do_equal;
   add_subr1 "num?" do_nump;
   add_subr2 "cons" do_cons;
-  add_subr1 "car" do_car;
-  add_subr1 "cdr" do_cdr;
+  add_subr1 "car" car;
+  add_subr1 "cdr" cdr;
   add_subr "nth" do_nth;
   add_subr "list" do_list;
   add_subr "map" do_map;
@@ -609,7 +605,7 @@ let init_global () =
   add_subr2 "<=" do_lte;
   add_subr "and" do_and;
   add_subr "or" do_or;
-  add_subr "not" do_not;
+  add_subr1 "not" do_not;
   add_subr "cat" do_cat;
   add_subr "do" do_seq;
   add_subr "while" do_while;
