@@ -83,11 +83,10 @@ let error msg = print_endline ("ERR: "^msg); raise Error
 (* ************************************************************************** *)
 (* PRETTY-PRINTING functions *)
 
-let rec pp_cell = function
-  | Cons(x,NIL) -> pp x
-  | Cons(x,(Cons(_,_) as y)) -> (pp x)^" "^(pp_cell y)
-  | Cons(x,y) -> (pp x)^" . "^(pp y)
-  | _ -> assert false
+let rec pp_cell x = function
+  | NIL -> pp x
+  | Cons(z,y) -> (pp x)^" "^(pp_cell z y)
+  | y -> (pp x)^" . "^(pp y)
 
 and pp = function
   | Nb n -> string_of_int n
@@ -103,7 +102,7 @@ and pp = function
   | Quasiquote c -> "`"^(pp c)
   | If(c,t,e) -> "(if "^(pp c)^" "^(pp t)^" "^(pp e)^")"
   | NIL -> "()"
-  | Cons(_,_) as x -> "("^(pp_cell x)^")"
+  | Cons(x,y) -> "("^(pp_cell x y)^")"
   | Subr _ -> "<subr>"
   | Closure _ -> "<closure>"
 
@@ -121,7 +120,7 @@ and pp' = function
   | If(c,t,e) -> "(if "^(pp c)^" "^(pp t)^" "^(pp e)^")"
   | Unquote c -> ","^(pp c)
   | NIL -> "()"
-  | Cons(_,_) as x -> "("^(pp_cell x)^")"
+  | Cons(x,y) -> "("^(pp_cell x y)^")"
   | Subr _ -> "<subr>"
   | Closure _ -> "<closure>"
 
@@ -192,8 +191,10 @@ let current_env = ref init_env
 let extend_local x y g = E.add g x {value = y ; plist = PList.empty}
 
 let extend_global x y g =
-  try E.replace g x {(Env.find g x) with value = y}
-  with Not_found -> E.add g x { value = y ; plist = PList.empty}
+  try 
+    E.replace g x {(Env.find g x) with value = y}
+  with Not_found -> 
+    E.add g x { value = y ; plist = PList.empty}
 
 let full_lookup g x = (E.find_rec g x).value
 let lookup g x = (E.find g x).value
@@ -202,8 +203,10 @@ let lookup_plist g x = (E.find g x).plist
 
 let getprop g x p =
   let pl = lookup_plist g x in
-  try PList.find p pl
-  with Not_found -> error2 "undefined property" (Symb p)
+  try 
+    PList.find p pl
+  with Not_found -> 
+    error2 "undefined property" (Symb p)
 
 let addprop g x k v = 
   let c = Env.find g x in 
@@ -222,7 +225,7 @@ let rec compile env x =
     match x with
     | NIL | TRUE | Nb _ | Str _ 
     | Port _ | Env _ | Closure _ 
-    | Path (_,_) | Subr _ | Symb _ -> k x
+    | Subr _ | Path (_,_) | Symb _ -> k x
     | Unquote y -> compile0 env y (fun z -> k (Unquote z))
     | Quote y -> compile0 env y (fun z -> k (Quote z)) 
     | Quasiquote y -> compile0 env y (fun z -> k (Quasiquote z))
