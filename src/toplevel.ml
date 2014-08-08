@@ -10,10 +10,10 @@ let banner =
 
 let read () = Lexer.build_object !current_channel
 
-let do_load env t =
+let do_load t =
   try
     let n = 
-      Term.string_of_cell (snd (eval_c !Term.current_env (Term.car t)))
+      Term.string_of_cell (eval !Term.current_env t)
     in
     Lexer.reset_parser ();
     let chan = !current_channel in
@@ -24,7 +24,7 @@ let do_load env t =
       (try 
         while true do
           let term = Term.compile !Term.current_env (read ()) in
-          ignore (eval_c !Term.current_env term);
+          ignore (eval !Term.current_env term);
         done;
         Term.NIL
       with 
@@ -45,10 +45,11 @@ let toplevel () =
     print_string ((Env.env_name !Term.current_env)^"> ");
     flush stdout;
     try
-      let term = Term.compile (!Term.current_env) (read ()) in
+      let term = read () in
+      let term = Term.compile (!Term.current_env) term in
       begin
         try
-          let _, s = eval_c !Term.current_env term in
+          let s = eval !Term.current_env term in
           print_string "= ";
           Term.print s 
         with 
@@ -57,12 +58,13 @@ let toplevel () =
         | Stack_overflow -> print_endline "stack overflow ..."
       end
     with Term.Error -> ()
+        | e -> raise e
  done
 
 let _ =
   print_endline banner;
   init_global ();
-  add_subr "load" do_load;
+  add_subr1 "load" do_load;
   try toplevel(); 
   with End_of_file -> print_newline(); print_endline "Bye"; exit 0
  
