@@ -41,13 +41,21 @@ and unquote env n y =
 and eval env = function
     | (NIL | TRUE | Nb _ | Str _ | Port _ 
     | Env _ | Subr _ | Closure _) as x -> x
-    | Quote y -> y
     | Symb s -> full_lookup env s
     | Path(_,_) as x -> snd (eval_path env x)
     | If(c,t,e) ->
         if (eval env c) == TRUE then eval env t else eval env e
+    | Quote y -> y
     | Quasiquote y -> quasiquote env 1 y
-    | Cons(car, cdr) -> app_eval env cdr car
+    | Cons(car, cdr) ->
+        begin
+          match car with
+          | Symb s -> 
+              app_eval env cdr (full_lookup env s)
+          | Path _ as f ->
+              let ne, v = eval_path env f in app_eval ne cdr v
+          | _ -> app_eval env cdr car
+        end
     | _ -> assert false
 
 and eval_path env = function
@@ -61,11 +69,9 @@ ERROR to be fixed:
   evaluated with the wrong environment.
 *)
 and app_eval env args = function
-  | Symb s -> app_eval env args (full_lookup env s)
   | Subr f -> app_subr env args f
   | Closure(params, l, expr) -> apply_c env expr l params args
-  | (Path _) as f -> let ne, v = eval_path env f in app_eval ne args v
-  | f -> Cons(f, args)
+  | _ -> assert false
 
 and app_subr env args = function
   | F1 f -> f (eval env (car args))
