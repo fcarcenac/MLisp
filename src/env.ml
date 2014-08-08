@@ -45,12 +45,14 @@ module O = struct
     match (A.get t i) with
     | _ :: tl -> A.set t i (e::tl)
     | _ -> () 
-  
+ 
+  (*
   let remove t i =
     match (A.get t i) with
     | _::tl -> A.set t i tl
     | _ -> ()
-  
+  *)
+
   let keys t = 
     let _, l = 
       A.fold_right (fun x (n,a) -> (n+1, if x=[] then a else n::a)) t (0,[]) 
@@ -118,12 +120,13 @@ let replace d x e =
   match (O.A.get d.values x.i) with
   | _ :: tl -> O.A.set d.values x.i (e::tl)
   | _ -> () 
-  
+
+(*
 let remove d x =
   match (O.A.get d.values x.i) with
   | _::tl -> O.A.set d.values x.i tl
   | _ -> ()
-
+*)
 (*
 let add d x = O.add d.values x.i
 let remove d x = O.remove d.values x.i
