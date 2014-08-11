@@ -70,7 +70,7 @@ ERROR to be fixed:
 *)
 and app_eval env args = function
   | Subr f -> app_subr env args f
-  | Closure(params, l, expr) -> apply_c env expr l params args
+  | Closure(params, l, expr) -> apply_c env expr l params args 
   | _ -> assert false
 
 and app_subr env args = function
@@ -162,7 +162,7 @@ let rec def_rec x e env =
           env' in
       def_rec y e env' 
   | Symb nx -> extend_global nx e env
-  | _ -> error2 "expected to be a path or a symbol" x 
+  | _ -> type_error "expected to be a path or a symbol" x 
   
 (* 'let' definition : "(let (x v) expr)" *)
 let  do_let env t =
@@ -275,7 +275,7 @@ let do_map env t =
     match l with
     | NIL -> NIL
     | Cons(car,cdr) -> Cons(eval env (Cons(f,Cons(car,NIL))),map0 f cdr)
-    | _ -> error2 "list expected" l
+    | _ -> type_error "list expected" l
   in map0 f l
 
 (* ************************************************************************** *)
@@ -286,25 +286,25 @@ let rec add env acc = function
   | Cons(x,l) -> 
       (match eval env x with
       | Nb n -> add env (n + acc) l
-      | _ -> error2 "expected a number" x)
+      | _ -> type_error "expected a number" x)
   | t -> error2 "incompatible argument" t
 
 let do_plus env t = Nb (add env 0 t)
 
 let do_succ = function
   | Nb n -> Nb(succ n)
-  | x -> error2 "num type expected" x
+  | x -> type_error "num type expected" x
 
 let do_pred = function
   | Nb n -> Nb(pred n)
-  | x -> error2 "num type expected" x
+  | x -> type_error "num type expected" x
 
 let do_minus env t =
     match t with
     | Cons(x,l) ->
         (match eval env x with
         | Nb n -> Nb(n-(add env 0 l))
-        | _ -> error2 "expected a number" x)
+        | _ -> type_error "expected a number" x)
     | _ -> error2 "expected at least 2 args" t 
 
 let do_mult env t = 
@@ -427,8 +427,8 @@ let do_write env t =
         | _, _ -> assert false);
         TRUE
       end
-    else error2 "expected to be a string" s
-  else error2 "expected to be an output-port" p
+    else type_error "expected to be a string" s
+  else type_error "expected to be an output-port" p
 
 let do_open_input_file env t =
   let fn = string_of_cell (eval env (car t)) in
@@ -451,7 +451,7 @@ let do_close_input_file env t =
       close_in (Misc.get_opt c);
       TRUE;
     end
-  else error2 "expected to be an input_port" (car t)
+  else type_error "expected to be an input_port" (car t)
 
 let do_open_output_file env t =
   let fn = string_of_cell (eval env (car t)) in
@@ -474,7 +474,7 @@ let do_flush_output_string env t =
       Buffer.reset (Misc.get_opt b);
       TRUE
     end
-  else error2 "expected to be an output-string" (car t)
+  else type_error "expected to be an output-string" (car t)
 
 let do_get_output_string env t =
   let p = eval env (car t) in
@@ -483,7 +483,7 @@ let do_get_output_string env t =
       let _,b,_ = get_output_port p in
       Str(Buffer.contents (Misc.get_opt b))
     end
-  else error2 "expected to be an output-string" (car t)
+  else type_error "expected to be an output-string" (car t)
 
 let do_close_output_file env t =
   let p = eval env (car t) in
@@ -493,7 +493,7 @@ let do_close_output_file env t =
       close_out (Misc.get_opt c);
       TRUE
     end
-  else error2 "expected to be an input_port" (car t)
+  else type_error "expected to be an input_port" (car t)
 
 let do_read env t = 
     if is_null t then Lexer.build_object !Globals.current_channel
@@ -501,14 +501,14 @@ let do_read env t =
       let _,lb,_ = 
         let p = eval env (car t) in
         if is_input_port p then get_input_port p 
-        else error2 "expected to be an input port" p 
+        else type_error "expected to be an input port" p 
       in Lexer.build_object_lex lb
 
 let do_read_line env t =
   let _,_,c = 
     let p = eval env (car t) in
     if is_input_port p then get_input_port p 
-    else error2 "expected to be an input port" p in
+    else type_error "expected to be an input port" p in
   Str(input_line (Misc.get_opt c))
 
 (* ************************************************************************** *)
@@ -529,7 +529,7 @@ let do_make_env env t =
         current_env := (env_of_cell e); 
         car t
       end
-    else error2 "expected to be a symbol or environment expression" (car t)
+    else type_error "expected to be a symbol or environment expression" (car t)
 
 let do_symbols t =
   let f l = Misc.fold (fun k l' -> Cons(Symb k, l')) (Misc.reverse l) NIL in

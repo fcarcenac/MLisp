@@ -134,48 +134,56 @@ and error2 msg e =
   print_endline ("ERR: "^msg^": "^(pp e)); 
   raise Error
 *)
-let error2 msg e = print_endline (msg^": "^(pp e)); raise Error
+let error2 msg e = print_endline (msg^" - "^(pp e)); raise Error
+
+let type_error msg e = 
+  print_endline ("type error: ");
+  error2 msg e
+
+let binding_error msg e = 
+  print_endline ("binding error: ");
+  error2 msg e
 
 (* ************************************************************************** *)
 (* CELL ACCESSORS *)
 
-let car = function Cons(c,_) -> c | t -> error2 "not a cons cell" t
-let cdr = function Cons(_,l) -> l | t -> error2 "not a cons cell" t
-let cadr = function Cons(_,Cons(c,_)) -> c | t -> error2 "not a cons cell" t
-let cddr = function Cons(_,Cons(_,l)) -> l | t -> error2 "not a cons cell" t
+let car = function Cons(c,_) -> c | t -> type_error "not a cons cell" t
+let cdr = function Cons(_,l) -> l | t -> type_error "not a cons cell" t
+let cadr = function Cons(_,Cons(c,_)) -> c | t -> type_error "not a cons cell" t
+let cddr = function Cons(_,Cons(_,l)) -> l | t -> type_error "not a cons cell" t
 let caddr = function 
   | Cons (_,(Cons(_,Cons(c,_)))) -> c 
-  | t -> error2 "not a cons cell" t
+  | t -> type_error "not a cons cell" t
 let cdddr = function
   | Cons (_,(Cons(_,Cons(_,l)))) -> l
-  | t -> error2 "not a cons cell" t
+  | t -> type_error "not a cons cell" t
 
 
 (* ************************************************************************** *)
 (* Conversions *)
 
-let int_of_cell = function Nb n -> n | t -> error2 "expected a num" t
-let string_of_cell = function Str s -> s | t -> error2 "expected a string" t
-let symb_of_cell = function Symb s -> s | t -> error2 "expected a symbol" t
-let env_of_cell = function Env e -> e | t -> error2 "expected an environment" t
-let fun_of_cell = function Subr f -> f | t -> error2 "expected a <subr>" t
+let int_of_cell = function Nb n -> n | t -> type_error "expected a num" t
+let string_of_cell = function Str s -> s | t -> type_error "expected a string" t
+let symb_of_cell = function Symb s -> s | t -> type_error "expected a symbol" t
+let env_of_cell = function Env e -> e | t -> type_error "expected an environment" t
+let fun_of_cell = function Subr f -> f | t -> type_error "expected a <subr>" t
 
 let path_of_cell x =
   let rec path0 aux = function
     | Path (x, ((Path _) as y)) -> (path0 (x::aux) y)
     | Path (x, y) -> [x;y]
-    | _ -> error2 "bad path expression" x
+    | _ -> type_error "bad path expression" x
   in path0 [] x
 
 (* ************************************************************************** *)
 (* Ports Destructors *)
 let get_input_port = function
   | Port(Input(x,y,z)) -> x,y,z
-  | t -> error2 "expected to be an input port" t
+  | t -> type_error "expected to be an input port" t
 
 let get_output_port = function
   | Port(Output(x,y,z)) -> x,y,z
-  | t -> error2 "expected to be an output port" t
+  | t -> type_error "expected to be an output port" t
 
 
 (* ************************************************************************** *)
@@ -192,7 +200,7 @@ let extend_local x y g = E.add g x {value = y ; plist = PList.empty}
 
 let extend_global x y g =
   try 
-    E.replace g x {(Env.find g x) with value = y}
+    E.replace g x {(E.find g x) with value = y}
   with Not_found -> 
     E.add g x { value = y ; plist = PList.empty}
 
@@ -206,18 +214,18 @@ let getprop g x p =
   try 
     PList.find p pl
   with Not_found -> 
-    error2 "undefined property" (Symb p)
+    binding_error "undefined property" (Symb p)
 
 let addprop g x k v = 
-  let c = Env.find g x in 
+  let c = E.find g x in 
   E.replace g x {c with plist = PList.add k v c.plist}
 
 let rstprop g x =
-  let c = Env.find g x in 
+  let c = E.find g x in 
   E.replace g x {c with plist = PList.empty}
 
 let remprop g x k =
-  let c = Env.find g x in 
+  let c = E.find g x in 
   E.replace g x {c with plist = PList.remove k c.plist}
 
 let rec compile env x =
@@ -229,14 +237,14 @@ let rec compile env x =
     | Unquote y -> compile0 env y (fun z -> k (Unquote z))
     | Quote y -> compile0 env y (fun z -> k (Quote z)) 
     | Quasiquote y -> compile0 env y (fun z -> k (Quasiquote z))
-    | Cons(Symb f,Cons(args,Cons(expr,NIL))) when f = Env.symbol env "fun" ->
+    | Cons(Symb f,Cons(args,Cons(expr,NIL))) when f.E.name = "fun" ->
         compile0 env expr (fun x -> k (Closure(unbox args, [], x)))
-    | Cons(Symb f,Cons(c,Cons(t,Cons(e,NIL)))) when f = Env.symbol env "if" ->
+    | Cons(Symb f,Cons(c,Cons(t,Cons(e,NIL)))) when f.E.name = "if" ->
         compile0 
           env c 
           (fun x -> 
             compile0 env t (fun y -> compile0 env e (fun z -> k (If(x,y,z)))))
-    | Cons(Symb f,args) when f = Env.symbol env "cond" -> 
+    | Cons(Symb f,args) when f.E.name = "cond" -> 
         k (compile_cond env args)
     | Cons(car, cdr) -> 
         compile0 env car (fun x -> compile0 env cdr (fun y -> k (Cons(x,y))))
@@ -254,4 +262,3 @@ and unbox = function
   | NIL -> []
   | Cons(car,cdr) -> car :: (unbox cdr)
   | _ -> assert false
-
