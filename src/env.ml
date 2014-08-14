@@ -37,21 +37,19 @@ module O = struct
     | x::_ -> x 
     | _ -> raise Not_found
 
-  let add t i e = A.set t i (e::(A.get t i))
+  let add t i e = A.unsafe_set t i (e::(A.get t i))
 
   let copy = A.copy
   
   let replace t i e = 
     match (A.get t i) with
-    | _ :: tl -> A.set t i (e::tl)
+    | _ :: tl -> A.unsafe_set t i (e::tl)
     | _ -> () 
  
-  (*
   let remove t i =
-    match (A.get t i) with
-    | _::tl -> A.set t i tl
+    match (A.unsafe_get t i) with
+    | _::tl -> A.unsafe_set t i tl
     | _ -> ()
-  *)
 
   let keys t = 
     let _, l = 
@@ -114,19 +112,18 @@ let e_inherit env s =
 
 let add d x e = 
   let vals = d.values in 
-  O.A.set vals x.i (e::(O.A.get vals x.i))
+  O.A.unsafe_set vals x.i (e::(O.A.unsafe_get vals x.i))
 
 let replace d x e = 
-  match (O.A.get d.values x.i) with
-  | _ :: tl -> O.A.set d.values x.i (e::tl)
+  match (O.A.unsafe_get d.values x.i) with
+  | _ :: tl -> O.A.unsafe_set d.values x.i (e::tl)
   | _ -> () 
 
-(*
 let remove d x =
-  match (O.A.get d.values x.i) with
-  | _::tl -> O.A.set d.values x.i tl
+  match (O.A.unsafe_get d.values x.i) with
+  | _::tl -> O.A.unsafe_set d.values x.i tl
   | _ -> ()
-*)
+
 (*
 let add d x = O.add d.values x.i
 let remove d x = O.remove d.values x.i
