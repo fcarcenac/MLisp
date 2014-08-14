@@ -36,7 +36,7 @@ and cell =
   | NIL
   | Subr of subr 
   | Cons of cell * cell
-  | Closure of cell list * (int * ext_cell) list * cell
+  | Closure of int list * (int * ext_cell) list * cell
 
 (*
 and ccell = { mutable car: cell ; mutable cdr: cell }
@@ -231,14 +231,14 @@ let remprop g x k =
 let rec compile env x =
   let rec compile0 env x k = 
     match x with
-    | NIL | TRUE | Nb _ | Str _ 
-    | Port _ | Env _ | Closure _ 
-    | Subr _ | Path (_,_) | Symb _ -> k x
+    | TRUE | Nb _ | Str _ 
+    | Port _ | Env _ | Closure _ | Subr _ 
+    | NIL | Path (_,_) | Symb _ -> k x
     | Unquote y -> compile0 env y (fun z -> k (Unquote z))
     | Quote y -> compile0 env y (fun z -> k (Quote z)) 
     | Quasiquote y -> compile0 env y (fun z -> k (Quasiquote z))
-    | Cons(Symb f,Cons(args,Cons(expr,NIL))) when f.E.name = "fun" ->
-        compile0 env expr (fun x -> k (Closure(unbox args, [], x)))
+    | Cons(Symb f,Cons(p,Cons(expr,NIL))) when f.E.name = "fun" ->
+        compile0 env expr (fun x -> k (Closure(unbox p, [], x)))
     | Cons(Symb f,Cons(c,Cons(t,Cons(e,NIL)))) when f.E.name = "if" ->
         compile0 
           env c 
@@ -255,10 +255,11 @@ let rec compile env x =
 and compile_cond env = function
   | NIL -> NIL
   | Cons (Cons(TRUE,Cons(t,NIL)), _) -> compile env t
-  | Cons(Cons(c,Cons(t,NIL)),e) -> If(c,compile env t,compile_cond env e)
+  | Cons(Cons(c,Cons(t,NIL)),e) -> 
+      If(compile env c,compile env t,compile_cond env e)
   | x -> error2 "invalid expression" x
 
 and unbox = function
   | NIL -> []
-  | Cons(car,cdr) -> car :: (unbox cdr)
+  | Cons(Symb s,cdr) -> (s.E.i) :: (unbox cdr)
   | _ -> assert false
