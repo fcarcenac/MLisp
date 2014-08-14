@@ -70,7 +70,18 @@ ERROR to be fixed:
 *)
 and app_eval env args = function
   | Subr f -> app_subr env args f
-  | Closure(params, l, expr) -> apply_c env expr l params args 
+  | Closure(params, l, expr) ->
+      begin
+        match params, args with
+        | [], NIL -> apply0 env expr 
+        | [p], Cons(x,NIL) -> 
+            let v = eval env x in 
+            apply1 env expr p v 
+        | [p1;p2], Cons(x,Cons(y,NIL)) -> 
+            let v1 = eval env x and v2 = eval env y in
+            apply2 env expr p1 v1 p2 v2
+        | _,_ -> applyN env expr l params args
+      end
   | _ -> assert false
 
 and app_subr env args = function
@@ -78,13 +89,31 @@ and app_subr env args = function
   | F2 f -> f (eval env (car args)) (eval env (cadr args))
   | Fn f -> f env args
 
-and apply_c env expr l params args = 
+and apply0 env expr = eval env expr
+and apply1 env expr p v =
+  let c = { value = v ; plist = PList.empty } in
+  E.O.A.unsafe_set env.E.values p (c :: (E.O.A.unsafe_get env.E.values p));
+  let e = eval env expr in
+  E.O.remove env.E.values p;
+  e
+
+and apply2 env expr p1 v1 p2 v2 =
+  let c1 = { value = v1 ; plist = PList.empty } 
+  and c2 = { value = v2 ; plist = PList.empty } in
+  E.O.A.unsafe_set env.E.values p1 (c1 :: (E.O.A.unsafe_get env.E.values p1));
+  E.O.A.unsafe_set env.E.values p2 (c2 :: (E.O.A.unsafe_get env.E.values p2));
+  let e = eval env expr in
+  E.O.remove env.E.values p1;
+  E.O.remove env.E.values p2;
+  e
+
+and applyN env expr l params args = 
   match params, args with
   | [], NIL -> bind env expr l 
   | _ , NIL -> Closure(params, l, expr)
-  | (Symb x) :: y, Cons(a,b) ->
+  | i :: y, Cons(a,b) ->
       let c = { value = eval env a ; plist = PList.empty } in
-      apply_c env expr ((x.E.i,c)::l) y b 
+      applyN env expr ((i,c)::l) y b 
   | [], _ -> error "too many arguments" 
   | _,_ -> assert false 
 
@@ -93,8 +122,8 @@ and bind env exp l =
     match l with (*function*)
     | [] -> apply env exp acc
     | (id,c)::tl ->
-        let v = E.O.A.get env.E.values id in
-        E.O.A.set env.E.values id (c :: v);
+        let v = E.O.A.unsafe_get env.E.values id in
+        E.O.A.unsafe_set env.E.values id (c :: v);
         f tl ((id,v)::acc)
   in
   f l []
@@ -104,7 +133,7 @@ and apply env exp l =
   match l with
   | [] -> e
   | (id,v) :: tl -> 
-      E.O.A.set env.E.values id v;
+      E.O.A.unsafe_set env.E.values id v;
       (* pop args *)
       apply env e tl
 
