@@ -312,6 +312,10 @@ let do_map env t =
 
 let rec add env acc = function
   | NIL -> acc
+  | Cons(x, Cons(y, NIL)) as args ->
+      (match eval env x, eval env y with
+      | Nb x, Nb y -> x+y+acc
+      | _ -> type_error "expected numbers" args)
   | Cons(x,l) -> 
       (match eval env x with
       | Nb n -> add env (n + acc) l
