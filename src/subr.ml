@@ -72,15 +72,16 @@ and app_eval env args = function
   | Subr f -> app_subr env args f
   | Closure(params, l, expr) ->
       begin
-        match params, args with
-        | [], NIL -> apply0 env expr 
-        | [p], Cons(x,NIL) -> 
+        match params, l, args with
+        | [], [], NIL -> apply0 env expr 
+        | [p], [], Cons(x,NIL) -> 
             let v = eval env x in 
             apply1 env expr p v 
-        | [p1;p2], Cons(x,Cons(y,NIL)) -> 
-            let v1 = eval env x and v2 = eval env y in
+        | [p1;p2], [], Cons(x,Cons(y,NIL)) -> 
+            let v1 = eval env x 
+            and v2 = eval env y in
             apply2 env expr p1 v1 p2 v2
-        | _,_ -> applyN env expr l params args
+        | _ -> applyN env expr l params args
       end
   | _ -> assert false
 
