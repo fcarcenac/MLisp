@@ -59,7 +59,6 @@ REQUIRED_FILES = $(O_FILES) $(CMX_FILES)
 DUMP_FILES=$(MLI_FILES:.mli=.dump)
 CMO_COMPILE=\
 misc.cmo\
-hash.cmo\
 env.cmo\
 term.cmo\
 globals.cmo\

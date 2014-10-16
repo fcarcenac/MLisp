@@ -1,4 +1,4 @@
-open Hash
+open Hashtbl
 
 module M = Misc
 
@@ -10,13 +10,15 @@ let scope s = s.scope
 
 (* Symbols tables module *)
 module Symb = struct
-  type t_hashed = int * string
+  type t = int * string
   let hash = Hashtbl.hash
   let equal = (=)
-  let compare = compare
 end
 
-module S = MakeHashTable(Symb)
+module S = Make(Symb)
+
+let bucket_val _ b c =  b :: c
+let hvalues t = S.fold bucket_val t []
 
 module Pkey = struct
   type t = t_symbol
@@ -26,7 +28,7 @@ end
 module O = struct
   module A = Array
 
-  type 'a t_array = ('a list) array 
+  type 'a t_array = ('a list) array
   
   let create sz = A.make sz []
   
@@ -34,8 +36,8 @@ module O = struct
   
   let find t i =
     match (A.get t i) with 
-    | x::_ -> x 
-    | _ -> raise Not_found
+    | x :: _ -> x 
+    | _      -> raise Not_found
 
   let add t i e = A.unsafe_set t i (e::(A.get t i))
 
@@ -44,12 +46,12 @@ module O = struct
   let replace t i e = 
     match (A.get t i) with
     | _ :: tl -> A.unsafe_set t i (e::tl)
-    | _ -> () 
+    | _       -> () 
  
   let remove t i =
     match (A.unsafe_get t i) with
-    | _::tl -> A.unsafe_set t i tl
-    | _ -> ()
+    | _ :: tl -> A.unsafe_set t i tl
+    | _       -> ()
 
   let keys t = 
     let _, l = 
@@ -64,20 +66,20 @@ let symbols = (Symbols.create 769 : symbol Symbols.t_hashtable)
 
 module PropList = Map.Make(Pkey)
 
-type 'a ext_t = 
-    { id  : int ;
+type 'a ext_t =
+  { id  : int ;
     e_name : string ;
-    symbols : (t_symbol S.t_hashtable);
+    symbols : (t_symbol S.t);
     values : ('a O.t_array);
     chain : (('a ext_t) ref) list }
 
 
 let init st vt s n = 
-  {id = s ; 
-  e_name = n ; 
-  symbols = S.create st ; 
-  values = O.create vt ; 
-  chain = []}
+  { id = s ; 
+    e_name = n ; 
+    symbols = S.create st ; 
+    values = O.create vt ; 
+    chain = [] }
 
 let e_child env st vt s =
   { id = s.i ;
@@ -88,8 +90,8 @@ let e_child env st vt s =
 
 let env_id e = e.id
 let env_name e = e.e_name
-let s_table e = (e.symbols)
-let v_table e = (e.values)
+let s_table e = e.symbols
+let v_table e = e.values
 let chain e = e.chain
 
 let rec find_rec d x =
@@ -130,7 +132,7 @@ let remove d x = O.remove d.values x.i
 let replace d x = O.replace d.values x.i
 *)
 
-let symbols d = S.values d.symbols
+let symbols d = hvalues d.symbols
 
 let copy e =
   { id = e.id ;
@@ -161,4 +163,3 @@ let symbol e s =
           S.find (env.symbols) (env.id, s) 
         with Not_found -> loc_symb tl in
   loc_symb chain
-
