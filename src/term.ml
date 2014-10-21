@@ -145,21 +145,6 @@ let binding_error msg e =
   error2 msg e
 
 (* ************************************************************************** *)
-(* CELL ACCESSORS *)
-
-let car = function Cons(c,_) -> c | t -> type_error "not a cons cell" t
-let cdr = function Cons(_,l) -> l | t -> type_error "not a cons cell" t
-let cadr = function Cons(_,Cons(c,_)) -> c | t -> type_error "not a cons cell" t
-let cddr = function Cons(_,Cons(_,l)) -> l | t -> type_error "not a cons cell" t
-let caddr = function 
-  | Cons (_,(Cons(_,Cons(c,_)))) -> c 
-  | t -> type_error "not a cons cell" t
-let cdddr = function
-  | Cons (_,(Cons(_,Cons(_,l)))) -> l
-  | t -> type_error "not a cons cell" t
-
-
-(* ************************************************************************** *)
 (* Conversions *)
 
 let int_of_cell = function Nb n -> n | t -> type_error "expected a num" t

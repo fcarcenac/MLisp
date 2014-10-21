@@ -8,6 +8,8 @@ let car = function Cons(c,_) -> c | t -> error2 "not a cons cell" t
 let cdr = function Cons(_,c) -> c | t -> error2 "not a cons cell" t
 let cadr t = car (cdr t)
 let cddr t = cdr (cdr t)
+let caddr t = car (cdr (cdr t))
+let cdddr t = cdr (cdr (cdr t))
 let is_null = function NIL -> true | _ -> false
 let is_binary t = is_null(cddr t)
 let is_unary t = is_null(cdr t)
@@ -184,7 +186,6 @@ let rec def_rec x e env =
   | Path(Symb s,y) -> 
       let env' = 
         try 
-          print_endline "@@";
           (env_of_cell (eval env x))
         with Error -> 
           let env' = E.e_child !current_env 769 769 s in
