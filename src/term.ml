@@ -178,7 +178,9 @@ let mk_cons c l = Cons (c, l)
 
 (* ************************************************************************** *)
 (* Environment management *)
-let init_env = (E.init 769 769 0 "MAIN": ext_cell E.ext_t)
+let init_env = 
+  (E.init 999331 999331 0 "MAIN": ext_cell E.ext_t)
+  (*(E.init 769 769 0 "MAIN": ext_cell E.ext_t)*)
 let current_env = ref init_env 
 
 let extend_local x y g = E.add g x {value = y ; plist = PList.empty}
