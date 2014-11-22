@@ -2,7 +2,7 @@ exception IncompatibleArgument;;
 
 exception EmptyList;;
 
-let get_opt = function Some x -> x | _ -> raise IncompatibleArgument
+let always = function Some x -> x | _ -> raise IncompatibleArgument
 
 (** {4 fold} *)
 (** 
@@ -32,7 +32,9 @@ This function computes the length of a list
 - [l]: the list of which {e length} is computed
 
 *)
+(*
 let length l = fold (fun _ s -> s + 1) l 0;;
+*)
 
 (** {4 reverse} *)
 (** {b Purpose} 
