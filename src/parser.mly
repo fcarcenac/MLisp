@@ -12,7 +12,7 @@ let rec mk_path e = function
         try
           let ne = 
             match Term.lookup e sx with
-            | Term.Env x -> x 
+            | (Term.Env x) -> x 
             | _ -> Term.error2 "expected an <env> value" (Term.Symb sx) in
           Term.Path(Term.Symb sx, mk_path ne l)
           with Not_found -> 
@@ -51,23 +51,23 @@ expr:
   | expr_list     { $1 }
 
 expr_atom:
-  | Token_true              {(Term.TRUE)}
-  | Token_false             {(Term.NIL)}
-  | Token_num               {(Term.Nb $1)}
-  | Token_string            {(Term.Str $1)}
+  | Token_true              { Term.TRUE }
+  | Token_false             { Term.NIL }
+  | Token_num               { Term.Nb $1 }
+  | Token_string            { Term.Str $1 }
   /* First argument of M.ssplit is a regexp, Take car with special characters */
   | Token_symbol  {let l = M.ssplit "\." $1 in mk_path  (!Term.current_env) l}
-  | Token_nil     {(Term.NIL)}
+  | Token_nil     { Term.NIL }
   /*
-  | Token_fun               {(Term.Fun)}
-  | path          { mk_path (!Term.current_env) $1}
+  | Token_fun               { Term.Fun }
+  | path          { mk_path (!Term.current_env) $1 }
   */
 
 expr_list:
-  | Token_lpar par_expr Token_rpar  {$2}
-  | Token_quote expr                {(Term.Quote $2)}
-  | Token_quasiquote expr           {(Term.Quasiquote $2)}
-  | Token_unquote expr              {(Term.Unquote $2)}
+  | Token_lpar par_expr Token_rpar  { $2 }
+  | Token_quote expr                { Term.Quote $2 }
+  | Token_quasiquote expr           { Term.Quasiquote $2 }
+  | Token_unquote expr              { Term.Unquote $2 }
 
 par_expr:
   | expr Token_dot expr             { Term.Cons($1,$3) }
@@ -81,11 +81,11 @@ id:
   | Token_symbol {$1}
 
 path:
-  | path_               {$1}
+  | path_               { $1 }
 
 path_:
-  | id                  {[$1]}
-  | id Token_pdot path_ {$1::$3}
+  | id                  { [$1] }
+  | id Token_pdot path_ { $1::$3 }
 */
 %% 
 
