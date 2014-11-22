@@ -63,8 +63,6 @@ let is_symb = function Symb _ -> true | _ -> false
 
 let is_cons = function Cons (_,_) -> true | _ -> false
 
-let is_null = function NIL -> true | _ -> false
-
 let is_port = function Port _ -> true | _ -> false
 
 let is_input_port = function Port(Input(_,_,_)) -> true | _ -> false
@@ -83,26 +81,31 @@ let error msg = print_endline ("ERR: "^msg); raise Error
 (* ************************************************************************** *)
 (* PRETTY-PRINTING functions *)
 
+let pp_pfx p x = p ^ x 
+let pp_par x = "(" ^ x ^ ")"
+let pp_if x y z = 
+  let s = "if" ^ x ^ " " ^ y ^ " " ^ z in pp_par s
+
 let rec pp_cell x = function
   | NIL -> pp x
-  | Cons(z,y) -> (pp x)^" "^(pp_cell z y)
-  | y -> (pp x)^" . "^(pp y)
+  | Cons(z,y) -> (pp x) ^ " " ^ (pp_cell z y)
+  | y -> (pp x) ^ " . " ^ (pp y)
 
 and pp = function
   | Nb n -> string_of_int n
-  | Str s -> "\""^s^"\""
+  | Str s -> "\"" ^ s ^ "\""
   | Port (Input(_,_,_)) -> "<input_port>"
   | Port (Output(_,_,_)) -> "<output_port>"
   | Env _ -> "<env>"
   | TRUE -> "#t"
-  | Path(x,y) -> (pp x)^"."^(pp y)
+  | Path(x,y) -> (pp x) ^ "." ^ (pp y)
   | Symb s -> E.name s
-  | Quote c -> "'"^(pp c)
-  | Unquote c -> ","^(pp c)
-  | Quasiquote c -> "`"^(pp c)
-  | If(c,t,e) -> "(if "^(pp c)^" "^(pp t)^" "^(pp e)^")"
+  | Quote c -> "'" ^ (pp c)
+  | Unquote c -> "," ^ (pp c)
+  | Quasiquote c -> "`" ^ (pp c)
+  | If(c,t,e) -> "(if " ^ (pp c) ^ " " ^ (pp t) ^ " " ^ (pp e) ^ ")"
   | NIL -> "()"
-  | Cons(x,y) -> "("^(pp_cell x y)^")"
+  | Cons(x,y) -> "(" ^ (pp_cell x y) ^ ")"
   | Subr _ -> "<subr>"
   | Closure _ -> "<closure>"
 
@@ -172,11 +175,6 @@ let get_output_port = function
 
 
 (* ************************************************************************** *)
-(* Constructors *)
-
-let mk_cons c l = Cons (c, l)
-
-(* ************************************************************************** *)
 (* Environment management *)
 let init_env = 
   (E.init 999331 999331 0 "MAIN": ext_cell E.ext_t)
@@ -194,7 +192,7 @@ let extend_global x y g =
 let full_lookup g x = (E.find_rec g x).value
 let lookup g x = (E.find g x).value
 
-let lookup_plist g x = (E.find g x).plist
+let lookup_plist g x = (E.find_rec g x).plist
 
 let getprop g x p =
   let pl = lookup_plist g x in
@@ -219,8 +217,9 @@ let rec compile env x =
   let rec compile0 env x k = 
     match x with
     | TRUE | Nb _ | Str _ 
-    | Port _ | Env _ | Closure _ | Subr _ 
-    | NIL | Path (_,_) | Symb _ -> k x
+    | Port _ | Env _ | NIL
+    | Closure _ | Subr _ 
+    | Path (_,_) | Symb _ -> k x
     | Unquote y -> compile0 env y (fun z -> k (Unquote z))
     | Quote y -> compile0 env y (fun z -> k (Quote z)) 
     | Quasiquote y -> compile0 env y (fun z -> k (Quasiquote z))
@@ -233,6 +232,8 @@ let rec compile env x =
             compile0 env t (fun y -> compile0 env e (fun z -> k (If(x,y,z)))))
     | Cons(Symb f,args) when f.E.name = "cond" -> 
         k (compile_cond env args)
+    | Cons(car, NIL) -> 
+        compile0 env car (fun x -> k (Cons(x,NIL)))
     | Cons(car, cdr) -> 
         compile0 env car (fun x -> compile0 env cdr (fun y -> k (Cons(x,y))))
     | _ -> assert false
@@ -250,3 +251,149 @@ and unbox = function
   | NIL -> []
   | Cons(Symb s,cdr) -> (s.E.i) :: (unbox cdr)
   | _ -> assert false
+
+let car = function Cons(c,_) -> c | t -> error2 "not a cons cell" t
+let cdr = function Cons(_,c) -> c | t -> error2 "not a cons cell" t
+let cadr t = car (cdr t)
+let cddr t = cdr (cdr t)
+let caddr t = car (cdr (cdr t))
+let cdddr t = cdr (cdr (cdr t))
+let is_null = function NIL -> true | _ -> false
+let is_binary t = is_null(cddr t)
+let is_unary t = is_null(cdr t)
+let is_ternary t = is_null(cdddr t)
+
+(* Constructor *)
+let mk_cell v = {value = v ; plist = PList.empty}
+
+
+
+(* ************************************************************************** *)
+(* Quasiquoting/Evaluation/Application *)
+
+(* 
+NOTE: 
+  quasiquote should handle explicit levels (in order to be able to combine
+  multiple quasiquote/unquote
+  ``(,x y z) which evaluates to (x '(y z))
+*)
+
+let rec quasiquote env n y =
+    match y with
+    | NIL | TRUE 
+    | Subr _ | Closure _ 
+    | Str _ | Nb _ | Port _ | Env _ -> y
+    | Symb _ | Quote _ | Path (_,_) -> (*y*)
+        if n>1 then Quote (quasiquote env (n-1) y) else y
+    | Cons(x, l) -> Cons(quasiquote env n x, quasiquote env n l)
+    | If(c,t,e) -> 
+        If(quasiquote env n c, quasiquote env n t, quasiquote env n e)
+    | Unquote z -> unquote env (n-1) z
+    | Quasiquote y -> quasiquote env (n+1) y
+
+and unquote env n y = 
+  if n <> 0 then quasiquote env n y else eval env y
+
+and eval env = function
+    | NIL | TRUE | Nb _ | Str _ | Port _ | Env _
+    | Subr _ | Closure _ as x -> x
+    | Symb s -> full_lookup env s
+    | Path(_,_) as x -> snd (eval_path env x)
+    | If(c,t,e) ->
+        if (eval env c) == TRUE then eval env t else eval env e
+    | Quote y -> y
+    | Quasiquote y -> quasiquote env 1 y
+    | Cons(car, cdr) ->
+        begin
+          match car with
+          | Symb s -> 
+              app_eval env cdr (full_lookup env s)
+          | Path _ as f ->
+              let ne, v = eval_path env f in app_eval ne cdr v
+          | _ -> app_eval env cdr car
+        end
+    | x -> 
+        print_endline (pp x);
+        assert false
+
+and eval_path env = function
+  | Symb x -> env, full_lookup env x
+  | Path(Symb x,y) -> eval_path (env_of_cell (lookup env x)) y
+  | _ -> assert false
+
+(* 
+ERROR to be fixed: 
+  when the function is defined by a path expression, the arguments are 
+  evaluated with the wrong environment.
+*)
+and app_eval env args = function
+  | Subr f -> app_subr env args f
+  | Closure(params, l, expr) ->
+      begin
+        match params, l, args with
+        | [], [], NIL -> apply0 env expr 
+        | [p], [], Cons(x,NIL) -> 
+            let v = eval env x in 
+            apply1 env expr p v 
+        | [p1;p2], [], Cons(x,Cons(y,NIL)) -> 
+            let v1 = eval env x 
+            and v2 = eval env y in
+            apply2 env expr p1 v1 p2 v2
+        | _ -> applyN env expr l params args
+      end
+  | _ -> assert false
+
+and app_subr env args = function
+  | F1 f -> f (eval env (car args))
+  | F2 f -> f (eval env (car args)) (eval env (cadr args))
+  | Fn f -> f env args
+
+and apply0 env expr = eval env expr
+and apply1 env expr p v =
+  let c = mk_cell v in
+  E.O.A.unsafe_set env.E.values p (c :: (E.O.A.unsafe_get env.E.values p));
+  let e = eval env expr in
+  E.O.remove env.E.values p;
+  e
+
+and apply2 env expr p1 v1 p2 v2 =
+  let c1 = mk_cell v1 
+  and c2 = mk_cell v2 in
+  E.O.A.unsafe_set env.E.values p1 (c1 :: (E.O.A.unsafe_get env.E.values p1));
+  E.O.A.unsafe_set env.E.values p2 (c2 :: (E.O.A.unsafe_get env.E.values p2));
+  let e = eval env expr in
+  E.O.remove env.E.values p1;
+  E.O.remove env.E.values p2;
+  e
+
+and applyN env expr l params args = 
+  match params, args with
+  | [], NIL -> bind env expr l 
+  | _ , NIL -> Closure(params, l, expr)
+  | i :: y, Cons(a,b) ->
+      let c = mk_cell (eval env a) in
+      applyN env expr ((i,c)::l) y b 
+  | [], _ -> error "too many arguments" 
+  | _,_ -> assert false 
+
+and bind env exp l =
+  let rec f l acc = 
+    match l with (*function*)
+    | [] -> apply env exp acc
+    | (id,c)::tl ->
+        let v = E.O.A.unsafe_get env.E.values id in
+        E.O.A.unsafe_set env.E.values id (c :: v);
+        f tl ((id,v)::acc)
+  in
+  f l []
+
+and apply env exp l = 
+  let e = eval env exp in
+  match l with
+  | [] -> e
+  | (id,v) :: tl -> 
+      E.O.A.unsafe_set env.E.values id v;
+      (* pop args *)
+      apply env e tl
+
+

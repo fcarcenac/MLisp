@@ -1,5 +1,6 @@
 open Globals
 open Subr
+open Term
 
 let version = "0.9"
 let banner = 

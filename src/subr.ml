@@ -15,130 +15,8 @@ let is_binary t = is_null(cddr t)
 let is_unary t = is_null(cdr t)
 let is_ternary t = is_null(cdddr t)
 
-(* ************************************************************************** *)
-(* Quasiquoting/Evaluation/Application *)
-
-(* 
-NOTE: 
-  quasiquote should handle explicit levels (in order to be able to combine
-  multiple quasiquote/unquote
-  ``(,x y z) which evaluates to (x '(y z))
-*)
-
-let rec quasiquote env n y =
-    match y with
-    | NIL | TRUE | Subr _ | Closure _ 
-    | Str _ | Nb _ | Port _ | Env _ -> y
-    | Symb _ | Quote _ | Path (_,_) -> (*y*)
-        if n>1 then Quote (quasiquote env (n-1) y) else y
-    | Cons(x, l) -> Cons(quasiquote env n x, quasiquote env n l)
-    | If(c,t,e) -> 
-        If(quasiquote env n c, quasiquote env n t, quasiquote env n e)
-    | Unquote z -> unquote env (n-1) z
-    | Quasiquote y -> quasiquote env (n+1) y
-
-and unquote env n y = 
-  if n <> 0 then quasiquote env n y else eval env y
-
-and eval env = function
-    | (NIL | TRUE | Nb _ | Str _ | Port _ 
-    | Env _ | Subr _ | Closure _) as x -> x
-    | Symb s -> full_lookup env s
-    | Path(_,_) as x -> snd (eval_path env x)
-    | If(c,t,e) ->
-        if (eval env c) == TRUE then eval env t else eval env e
-    | Quote y -> y
-    | Quasiquote y -> quasiquote env 1 y
-    | Cons(car, cdr) ->
-        begin
-          match car with
-          | Symb s -> 
-              app_eval env cdr (full_lookup env s)
-          | Path _ as f ->
-              let ne, v = eval_path env f in app_eval ne cdr v
-          | _ -> app_eval env cdr car
-        end
-    | _ -> assert false
-
-and eval_path env = function
-  | Symb x -> env, full_lookup env x
-  | Path(Symb x,y) -> eval_path (env_of_cell (lookup env x)) y
-  | _ -> assert false
-
-(* 
-ERROR to be fixed: 
-  when the function is defined by a path expression, the arguments are 
-  evaluated with the wrong environment.
-*)
-and app_eval env args = function
-  | Subr f -> app_subr env args f
-  | Closure(params, l, expr) ->
-      begin
-        match params, l, args with
-        | [], [], NIL -> apply0 env expr 
-        | [p], [], Cons(x,NIL) -> 
-            let v = eval env x in 
-            apply1 env expr p v 
-        | [p1;p2], [], Cons(x,Cons(y,NIL)) -> 
-            let v1 = eval env x 
-            and v2 = eval env y in
-            apply2 env expr p1 v1 p2 v2
-        | _ -> applyN env expr l params args
-      end
-  | _ -> assert false
-
-and app_subr env args = function
-  | F1 f -> f (eval env (car args))
-  | F2 f -> f (eval env (car args)) (eval env (cadr args))
-  | Fn f -> f env args
-
-and apply0 env expr = eval env expr
-and apply1 env expr p v =
-  let c = { value = v ; plist = PList.empty } in
-  E.O.A.unsafe_set env.E.values p (c :: (E.O.A.unsafe_get env.E.values p));
-  let e = eval env expr in
-  E.O.remove env.E.values p;
-  e
-
-and apply2 env expr p1 v1 p2 v2 =
-  let c1 = { value = v1 ; plist = PList.empty } 
-  and c2 = { value = v2 ; plist = PList.empty } in
-  E.O.A.unsafe_set env.E.values p1 (c1 :: (E.O.A.unsafe_get env.E.values p1));
-  E.O.A.unsafe_set env.E.values p2 (c2 :: (E.O.A.unsafe_get env.E.values p2));
-  let e = eval env expr in
-  E.O.remove env.E.values p1;
-  E.O.remove env.E.values p2;
-  e
-
-and applyN env expr l params args = 
-  match params, args with
-  | [], NIL -> bind env expr l 
-  | _ , NIL -> Closure(params, l, expr)
-  | i :: y, Cons(a,b) ->
-      let c = { value = eval env a ; plist = PList.empty } in
-      applyN env expr ((i,c)::l) y b 
-  | [], _ -> error "too many arguments" 
-  | _,_ -> assert false 
-
-and bind env exp l =
-  let rec f l acc = 
-    match l with (*function*)
-    | [] -> apply env exp acc
-    | (id,c)::tl ->
-        let v = E.O.A.unsafe_get env.E.values id in
-        E.O.A.unsafe_set env.E.values id (c :: v);
-        f tl ((id,v)::acc)
-  in
-  f l []
-
-and apply env exp l = 
-  let e = eval env exp in
-  match l with
-  | [] -> e
-  | (id,v) :: tl -> 
-      E.O.A.unsafe_set env.E.values id v;
-      (* pop args *)
-      apply env e tl
+(* Constructor *)
+let mk_cell v = {value = v ; plist = PList.empty}
 
 let do_quote t = car t
 
@@ -200,7 +78,7 @@ let  do_let env t =
   let rec f acc = function
     | Cons(e,NIL) -> bind env e acc 
     | Cons(Cons(Symb x,Cons(y,NIL)),tl) ->
-        let c = {value = eval env y; plist = PList.empty} in
+        let c = mk_cell (eval env y) in
         f ((x.Env.i,c)::acc) tl 
     | _ -> error2 "incompatible argument" t in
   f [] t
@@ -289,7 +167,7 @@ let do_cdr = cdr
 
 let do_list env t =
   let rec cons acc t =
-    if is_null t then Misc.fold (fun t a -> mk_cons t a) acc NIL
+    if is_null t then Misc.fold (fun t a -> Cons (t, a)) acc NIL
     else cons ((eval env (car t))::acc) (cdr t) in
   cons [] t
 
@@ -483,7 +361,7 @@ let do_close_input_file env t =
   if is_input_file p then
     begin
       let _,_, c = get_input_port p in
-      close_in (Misc.get_opt c);
+      close_in (Misc.always c);
       TRUE;
     end
   else type_error "expected to be an input_port" (car t)
@@ -506,7 +384,7 @@ let do_flush_output_string env t =
   if is_output_string p then
     begin
       let _,b,_ = get_output_port p in
-      Buffer.reset (Misc.get_opt b);
+      Buffer.reset (Misc.always b);
       TRUE
     end
   else type_error "expected to be an output-string" (car t)
@@ -516,7 +394,7 @@ let do_get_output_string env t =
   if is_output_string p then
     begin
       let _,b,_ = get_output_port p in
-      Str(Buffer.contents (Misc.get_opt b))
+      Str(Buffer.contents (Misc.always b))
     end
   else type_error "expected to be an output-string" (car t)
 
@@ -525,7 +403,7 @@ let do_close_output_file env t =
   if is_output_file p then
     begin
       let _,_,c = get_output_port p in
-      close_out (Misc.get_opt c);
+      close_out (Misc.always c);
       TRUE
     end
   else type_error "expected to be an input_port" (car t)
@@ -544,7 +422,7 @@ let do_read_line env t =
     let p = eval env (car t) in
     if is_input_port p then get_input_port p 
     else type_error "expected to be an input port" p in
-  Str(input_line (Misc.get_opt c))
+  Str(input_line (Misc.always c))
 
 (* ************************************************************************** *)
 (* ENVIRONMENT *)
