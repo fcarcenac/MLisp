@@ -26,12 +26,12 @@ let push x s = s.c <- x :: s.c
 let replace x s = 
   match s.c with
   | _ :: r -> s.c <- x :: r
-  | [] -> s.c <- [x]
+  | []     -> s.c <- [x]
 
 let pop s =
   match s.c with
   | _::tl -> s.c <- tl
-  | []     -> raise Empty
+  | []    -> s.c <- []
 
 let top s =
   match s.c with
