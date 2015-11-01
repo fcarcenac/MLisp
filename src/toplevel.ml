@@ -1,5 +1,4 @@
 open Globals
-open Term
 
 let version = "0.9"
 let banner = 
@@ -31,7 +30,7 @@ let backup_session () =
 let do_load t =
   try
     let n = 
-      Term.string_of_cell (eval !Term.current_env t)
+      LspUtils.string_of_cell (Eval.eval !Globals.init_env t)
     in
     Lexer.reset_parser ();
     let chan = !input_channel in
@@ -41,48 +40,48 @@ let do_load t =
     let res = 
       (try 
         while true do
-          let term = Term.compile !Term.current_env (read ()) in
-          ignore (eval !Term.current_env term);
+          let term = Eval.compile !Globals.init_env (read ()) in
+          ignore (Eval.eval !Globals.init_env term);
         done;
-        Term.NIL
+        Lsp.NIL
       with 
-      | End_of_file -> Term.TRUE
-      | Term.Error -> Term.NIL) in
+      | End_of_file -> Lsp.TRUE
+      | LspUtils.Error -> Lsp.NIL) in
     print_endline (n^" has been successfully loaded");
     close_in !input_channel;
     input_channel := chan;
     Lexer.reset_parser ();
     res
   with
-  | Sys_error s -> Term.error s
+  | Sys_error s -> Eval.error s
 
 let toplevel () =
   Lexer.reset_parser ();
   while true do
     print_newline ();
-    print_string ((Env.env_name !Term.current_env)^"> ");
+    print_string ((LspUtils.env_name !Globals.init_env)^"> ");
     flush stdout;
     try
       let term = read () in
-      let term = Term.compile (!Term.current_env) term in
+      let term = Eval.compile (!Globals.init_env) term in
       begin
         try
           (* evaluates, then prints the result *)
-          let s = eval !Term.current_env term in
+          let s = Eval.eval !Globals.init_env term in
           print_string "= ";
-          Term.print s;
+          Eval.print s;
 
           (*
           (* backup the latest valid command *)
           backup_session ();
           *)
         with 
-        | Term.Error -> Term.error2 "found an error" term
-        | Not_found -> Term.error2 "unknown symbol in" term
+        | LspUtils.Error -> LspUtils.error2 "found an error" term
+        | Not_found -> LspUtils.error2 "unknown symbol in" term
         | Stack_overflow -> print_endline "stack overflow ..."
       end
     with 
-    | Term.Error -> ()
+    | LspUtils.Error -> ()
     | e -> raise e
   done
 
@@ -93,7 +92,7 @@ let _ =
     };*)
   (* Initialize the interpreter *)
   Subr.init_global ();
-  Subr.add_subr1 "load" do_load;
+  Subr.add_subr1 !Globals.init_env "load" do_load;
   
   (* Launch the REPL *)
   print_endline banner;

@@ -1,19 +1,18 @@
 /* File parser.mly */
 
 %{
-module E = Env
 module M = Misc
 
 let rec mk_path e = function
-  | [x] -> Term.Symb(E.symbol e x)
+  | [x] -> Lsp.Symb(LspUtils.symbol e x)
   | x::l ->
-      let sx = E.symbol e x in
+      let sx = LspUtils.symbol e x in
       begin
         try
-          let ne = Term.lookup e sx in
-          Term.Path(Term.Symb sx, mk_path ne l)
+          let ne = LspUtils.lookup e sx in
+          Lsp.Path(Lsp.Symb sx, mk_path ne l)
           with Not_found -> 
-            Term.error2 "unknown symbol" (Term.Symb sx)
+            LspUtils.error2 "unknown symbol" (Lsp.Symb sx)
       end
   | [] -> raise Parse_error
 
@@ -34,7 +33,7 @@ let rec mk_path e = function
 %token Token_dot
 
 %start main             /* the entry point */
-%type  <Term.cell> main
+%type  <Lsp.cell> main
 
 %% 
 /* Grammar rules */
@@ -50,28 +49,28 @@ expr_atom:
   /* First argument of M.ssplit is a regexp, Take car with special characters */
   | Token_symbol  { 
       let l = M.split '.' $1 in 
-      mk_path  (!Term.current_env) l}
-  | Token_nil     { Term.NIL }
+      mk_path  (!Globals.init_env) l}
+  | Token_nil     { Lsp.NIL }
   | expr_val                { $1 }
 
 expr_val:
-  | Token_true              { Term.TRUE }
-  | Token_num               { Term.Nb $1 }
-  | Token_string            { Term.Str $1 }
+  | Token_true              { Lsp.TRUE }
+  | Token_num               { Lsp.Nb $1 }
+  | Token_string            { Lsp.Str $1 }
 
 expr_list:
   | Token_lpar par_expr Token_rpar  { $2 }
-  | Token_quote expr                { Term.Quote $2 }
-  | Token_quasiquote expr           { Term.Quasiquote $2 }
-  | Token_unquote expr              { Term.Unquote $2 }
+  | Token_quote expr                { Lsp.Quote $2 }
+  | Token_quasiquote expr           { Lsp.Quasiquote $2 }
+  | Token_unquote expr              { Lsp.Unquote $2 }
 
 par_expr:
-  | expr Token_dot expr             { Term.Cons($1,$3) }
+  | expr Token_dot expr             { Lsp.Cons($1,$3) }
   | list_expr                       { $1 }
 
 list_expr:
-  | /* Nothing */                   { Term.NIL }
-  | expr list_expr                  { Term.Cons($1,$2) }
+  | /* Nothing */                   { Lsp.NIL }
+  | expr list_expr                  { Lsp.Cons($1,$2) }
 /*
 id:
   | Token_symbol {$1}
