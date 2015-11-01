@@ -10,10 +10,7 @@ let rec mk_path e = function
       let sx = E.symbol e x in
       begin
         try
-          let ne = 
-            match Term.lookup e sx with
-            | (Term.Env x) -> x 
-            | _ -> Term.error2 "expected an <env> value" (Term.Symb sx) in
+          let ne = Term.lookup e sx in
           Term.Path(Term.Symb sx, mk_path ne l)
           with Not_found -> 
             Term.error2 "unknown symbol" (Term.Symb sx)
@@ -34,7 +31,6 @@ let rec mk_path e = function
 %token Token_quasiquote
 %token Token_unquote
 %token Token_true
-%token Token_false
 %token Token_dot
 
 %start main             /* the entry point */
@@ -51,17 +47,17 @@ expr:
   | expr_list     { $1 }
 
 expr_atom:
+  /* First argument of M.ssplit is a regexp, Take car with special characters */
+  | Token_symbol  { 
+      let l = M.split '.' $1 in 
+      mk_path  (!Term.current_env) l}
+  | Token_nil     { Term.NIL }
+  | expr_val                { $1 }
+
+expr_val:
   | Token_true              { Term.TRUE }
-  | Token_false             { Term.NIL }
   | Token_num               { Term.Nb $1 }
   | Token_string            { Term.Str $1 }
-  /* First argument of M.ssplit is a regexp, Take car with special characters */
-  | Token_symbol  {let l = M.ssplit "\." $1 in mk_path  (!Term.current_env) l}
-  | Token_nil     { Term.NIL }
-  /*
-  | Token_fun               { Term.Fun }
-  | path          { mk_path (!Term.current_env) $1 }
-  */
 
 expr_list:
   | Token_lpar par_expr Token_rpar  { $2 }

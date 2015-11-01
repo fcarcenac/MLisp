@@ -86,10 +86,14 @@ rule lisp_token = parse
 
 let lexing_buffer = 
   (* A global variable *)
-  ref(Lexing.from_channel !current_channel)
+  ref(Lexing.from_channel !input_channel)
 ;;
 
-let build_object _ = 
+let build_object () =
+  let s = Bytes.to_string (!lexing_buffer).Lexing.lex_buffer in
+  command := !command ^ s;
+  (*lexing_buffer := (Lexing.from_string s);*)
+
   (* Channel is handled through the lexing buffer *)
   main lisp_token !lexing_buffer
 ;;
@@ -97,9 +101,10 @@ let build_object _ =
 let build_object_lex lb =
   main lisp_token lb
 
-let reset_parser () = 
+let reset_parser () =
+  command := "";
   (* Rebuild the lexing buffer from the current channel *)
-  lexing_buffer := (Lexing.from_channel !current_channel)
+  lexing_buffer := (Lexing.from_channel !input_channel)
 ;;
 
 }

@@ -15,9 +15,6 @@ let is_binary t = is_null(cddr t)
 let is_unary t = is_null(cdr t)
 let is_ternary t = is_null(cdddr t)
 
-(* Constructor *)
-let mk_cell v = {value = v ; plist = PList.empty}
-
 let do_quote t = car t
 
 (* ************************************************************************** *)
@@ -64,9 +61,10 @@ let rec def_rec x e env =
   | Path(Symb s,y) -> 
       let env' = 
         try 
-          (env_of_cell (eval env x))
+          env_of_cell (eval env x)
         with Error -> 
-          let env' = E.e_child !current_env 769 769 s in
+
+          let env' = E.e_child !current_env 769 s in
           extend_global s (Env env') env;
           env' in
       def_rec y e env' 
@@ -76,10 +74,13 @@ let rec def_rec x e env =
 (* 'let' definition : "(let (x v) expr)" *)
 let  do_let env t =
   let rec f acc = function
-    | Cons(e,NIL) -> bind env e acc 
+    | Cons(e,NIL) -> 
+        let e = eval env e in 
+        Term.apply env e acc 
     | Cons(Cons(Symb x,Cons(y,NIL)),tl) ->
-        let c = mk_cell (eval env y) in
-        f ((x.Env.i,c)::acc) tl 
+        let c = {value = NIL ; plist = PList.empty } in
+        Term.push env x.Env.i (eval env y);
+        f ((x.Env.i, c) :: acc) tl 
     | _ -> error2 "incompatible argument" t in
   f [] t
 
@@ -114,7 +115,7 @@ let do_defun env t =
 
 let cell_of_bool c = if c then TRUE else NIL
 
-let do_equal o1 o2 = if o1=o2 then TRUE else NIL
+let do_equal (o1:Term.cell) o2 = if o1=o2 then TRUE else NIL
 
 let do_eq a b = 
   match a, b with
@@ -127,24 +128,32 @@ let do_eq a b =
 
 (* ************************************************************************** *)
 (* COMPARISON Predicates *)
-let do_gt a b = 
+let lte (x:int) (y:int) = x<=y
+let gte (x:int) (y:int) = x>=y
+
+let do_gt a b =
   match a, b with
-  | Nb x,Nb y -> if (x:int)<=(y:int) then NIL else TRUE
+  | Nb x, Nb y when lte x y -> NIL 
+  | Nb _, Nb _              -> TRUE
+      (*if lte x y then NIL else TRUE*)
   | _, _ -> error "Relational operator apply on num values"
 
 let do_gte a b =
   match a, b with
-  | Nb x, Nb y -> if (x:int)>=(y:int) then TRUE else NIL
+  | Nb x, Nb y when gte x y -> TRUE 
+  | Nb _, Nb _              -> NIL 
   | _, _ -> error "Relational operator apply on num values"
 
 let do_lt a b = 
   match a, b with
-  | Nb x, Nb y -> if (x:int)>=(y:int) then NIL else TRUE
+  | Nb x, Nb y when gte x y -> NIL
+  | Nb _, Nb _              -> TRUE
   | _, _ -> error "Relational operator apply on num values"
 
 let do_lte a b =
   match a, b with
-  | Nb x, Nb y -> if (x:int)<=(y:int) then TRUE else NIL
+  | Nb x, Nb y when lte x y -> TRUE      
+  | Nb _, Nb _              -> NIL      
   | _, _ -> error "Relational operator apply on num values" 
 
 (* ************************************************************************** *)
@@ -194,7 +203,7 @@ let rec add env acc = function
   | NIL -> acc
   | Cons(x, Cons(y, NIL)) as args ->
       (match eval env x, eval env y with
-      | Nb x, Nb y -> x+y+acc
+      | Nb x, Nb y -> x + (y + acc)
       | _ -> type_error "expected numbers" args)
   | Cons(x,l) -> 
       (match eval env x with
@@ -208,7 +217,7 @@ let do_succ = function
   | Nb n -> Nb(succ n)
   | x -> type_error "num type expected" x
 
-let do_pred = function
+let do_pred = function 
   | Nb n -> Nb(pred n)
   | x -> type_error "num type expected" x
 
@@ -258,7 +267,7 @@ let do_or env t =
     | Cons(x,y) ->
         (match eval env x with
         | NIL -> door y 
-        | nx -> nx)
+        | _ -> TRUE)
     | t -> error2 "unexpected argument" t 
   in door t
 
@@ -409,7 +418,7 @@ let do_close_output_file env t =
   else type_error "expected to be an input_port" (car t)
 
 let do_read env t = 
-    if is_null t then Lexer.build_object !Globals.current_channel
+    if is_null t then Lexer.build_object ()
     else 
       let _,lb,_ = 
         let p = eval env (car t) in
@@ -431,7 +440,8 @@ let do_make_env env t =
   let e = eval env (car t) in
   if is_symb e then 
     begin
-      let env' = Env (E.e_child !current_env 769 769 (symb_of_cell e)) in
+      let env' = 
+        Env (E.e_child !current_env 769 (symb_of_cell e)) in
       extend_global (symb_of_cell e) env' env;
       current_env := env_of_cell env';
       e
@@ -445,7 +455,11 @@ let do_make_env env t =
     else type_error "expected to be a symbol or environment expression" (car t)
 
 let do_symbols t =
-  let f l = Misc.fold (fun k l' -> Cons(Symb k, l')) (Misc.reverse l) NIL in
+  let f l = 
+    Misc.fold 
+      (fun k l' -> Cons(Symb k, l')) 
+      (Misc.reverse l) 
+      NIL in
   f (Env.symbols (env_of_cell t))
 
 (* ************************************************************************** *)
@@ -479,10 +493,16 @@ let do_exit _ _ = raise End_of_file
 (* ************************************************************************** *)
 (* PERVASIVES *)
 let add_subr s f = 
-  extend_global (Env.symbol !current_env s) (Subr (Fn f)) !current_env
+  extend_global 
+    (Env.symbol !current_env s) 
+    (Subr (Fn f)) 
+    !current_env
 
 let add_subr1 s f = 
-  extend_global (Env.symbol !current_env s) (Subr (F1 f)) !current_env
+  extend_global 
+  (Env.symbol !current_env s) 
+  (Subr (F1 f)) 
+  !current_env
 
 let add_subr2 s f = 
   extend_global (Env.symbol !current_env s) (Subr (F2 f)) !current_env
@@ -495,11 +515,11 @@ let init_global () =
     (Env.symbol !current_env "MAIN") 
     (Env !current_env)
     !current_env;
-  add_subr "in-package" do_make_env;
+  add_subr "package" do_make_env;
   add_subr1 "symbols" do_symbols;
   add_subr "define" do_define;
   add_subr "defun" do_defun;
-  add_subr1 "quote" do_quote;
+  (*add_subr1 "quote" do_quote;*)
   add_subr "eval" do_eval;
   add_subr "set" do_set;
   add_subr "setq" do_setq;

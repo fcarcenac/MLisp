@@ -1,8 +1,9 @@
-open Hashtbl
-
 module M = Misc
 
-type t_symbol = {name : string; i: int; scope: int}
+type t_symbol = {
+  name  : string ; 
+  i     : int ; 
+  scope : int ;}
 
 let name s = s.name
 let id s = s.i
@@ -15,151 +16,167 @@ module Symb = struct
   let equal = (=)
 end
 
-module S = Make(Symb)
+module S = Hashtbl.Make(Symb)
 
 let bucket_val _ b c =  b :: c
 let hvalues t = S.fold bucket_val t []
 
 module Pkey = struct
   type t = t_symbol
-  let compare (x:t_symbol) (y:t_symbol) = (x.i) - (y.i)
+  let compare (x:t_symbol) (y:t_symbol) = compare x.i y.i
 end
 
-module O = struct
-  module A = Array
+module Values = struct
+  type 'a t_values = ('a Stack.t) array
+  
+  let create sz = 
+    Array.init sz (fun _ -> Stack.create ()) 
+  
+  let size a = Array.length a
+  
+  let find t i = 
+    try Stack.top (Array.get t i)
+    with Stack.Empty -> raise Not_found
 
-  type 'a t_array = ('a list) array
-  
-  let create sz = A.make sz []
-  
-  let size = A.length 
-  
-  let find t i =
-    match (A.get t i) with 
-    | x :: _ -> x 
-    | _      -> raise Not_found
-
-  let add t i e = A.unsafe_set t i (e::(A.get t i))
-
-  let copy = A.copy
-  
-  let replace t i e = 
-    match (A.get t i) with
-    | _ :: tl -> A.unsafe_set t i (e::tl)
-    | _       -> () 
+  let push t i e = Stack.push (Array.get t i) e
  
-  let remove t i =
-    match (A.unsafe_get t i) with
-    | _ :: tl -> A.unsafe_set t i tl
-    | _       -> ()
+  let pop t i = Stack.pop (Array.unsafe_get t i)
 
-  let keys t = 
-    let _, l = 
-      A.fold_right (fun x (n,a) -> (n+1, if x=[] then a else n::a)) t (0,[]) 
-    in l
 end
-
-(*
-let values = (ObjPool.create 769 : 'a ObjPool.t_array)
-let symbols = (Symbols.create 769 : symbol Symbols.t_hashtable)
-*)
 
 module PropList = Map.Make(Pkey)
 
-type 'a ext_t =
-  { id  : int ;
-    e_name : string ;
-    symbols : (t_symbol S.t);
-    values : ('a O.t_array);
-    chain : (('a ext_t) ref) list }
+type 'a package = { 
+  id             : int ;
+  e_name         : string ;
+  mutable father : 'a package ; 
+  mutable dummy  : 'a package ; 
+  symbols        : t_symbol S.t ; }
 
+type ('a, 'b) ext_t = {
+    r1 : 'b ;
+    r2 : 'b ;
+    values : 'a Values.t_values ;
+    pkg    : 'a package ; }
 
-let init st vt s n = 
-  { id = s ; 
-    e_name = n ; 
-    symbols = S.create st ; 
-    values = O.create vt ; 
-    chain = [] }
+let dummy (_:'a) =
+  let rec e : 'a package = { 
+    id      = -1 ; 
+    e_name  = "" ; 
+    symbols = S.create 0;
+    father  = e ;
+    dummy   = e ; }
+  in
+  e
 
-let e_child env st vt s =
-  { id = s.i ;
-    e_name = s.name ;
-    symbols = S.create st ;
-    values = O.create vt ;
-    chain = (ref env) :: env.chain }
+let init st vt s n x y = 
+  let dummy = dummy y in
+  { 
+    r1 = x ;
+    r2 = x ;
+    values = Values.create vt ;
+    pkg = {
+      id = s ; 
+      e_name = n ; 
+      symbols = S.create st ; 
+      father = dummy ;
+      dummy = dummy ; }
+  }
 
-let env_id e = e.id
-let env_name e = e.e_name
-let s_table e = e.symbols
+let e_child env st s =
+  {
+    r1 = env.r1 ; 
+    r2 = env.r2 ;
+    values = env.values ;
+    pkg = {
+      id = s.i ;
+      e_name = s.name ;
+      symbols = S.create st ;
+      father = env.pkg ;
+      dummy = env.pkg.dummy 
+  }}
+
+let env_id e = e.pkg.id
+let env_name e = e.pkg.e_name
+let s_table e = e.pkg.symbols
 let v_table e = e.values
-let chain e = e.chain
 
 let rec find_rec d x =
-  match O.A.get d.values x.i, d.chain with
-  | e :: _, _ -> e
-  | _, e :: _ -> find_rec !e x
-  | _, _ -> raise Not_found
+  let stack = Array.get d.values x.i in
+  if Stack.is_empty stack
+  then 
+    begin
+      let father = d.pkg.father in
+      if father == d.pkg.dummy then raise Not_found
+      else find_rec {d with pkg = father} x
+    end
+  else Stack.top stack
+
+let rec r_get d x =
+  if Stack.is_empty (Array.get d.values x.i)
+  then
+    begin
+      let father = d.pkg.father in
+      if father == d.pkg.dummy then raise Not_found
+      else r_get {d with pkg = father} x
+    end
+  else d, x.i
+
+let top e i = Stack.top (Array.unsafe_get (e.values) i)
+
+let push e i x = Stack.push x (Array.unsafe_get e i)
+
+let replace d x e =
+  let stack = Array.unsafe_get d.values x.i in
+  Stack.replace e stack
+
 
 let find d x = 
-  match O.A.get d.values x.i with
-  | e :: _ -> e
-  | _ -> raise Not_found
+  let stack = Array.get d.values x.i in
+  if Stack.is_empty stack
+  then raise Not_found
+  else Stack.top stack
+
+
+let get d x = 
+  if Stack.is_empty (Array.get d.values x.i)
+  then raise Not_found
+  else d, x.i
 
 let e_inherit env s = 
-  { id = s.i ; 
-    e_name = s.name ;
-    symbols = S.create 93 ; 
-    values = env.values ; 
-    chain = (ref env)::env.chain }
+  { 
+    r1 = env.r1 ;
+    r2 = env.r2 ;
+    values = env.values ;
+    pkg = { 
+      id = s.i ; 
+      e_name = s.name ;
+      symbols = S.create 93 ; 
+      father = env.pkg ;
+      dummy =  env.pkg.dummy}
+  }
 
-let add d x e = 
-  let vals = d.values in 
-  O.A.unsafe_set vals x.i (e::(O.A.unsafe_get vals x.i))
-
-let replace d x e = 
-  match (O.A.unsafe_get d.values x.i) with
-  | _ :: tl -> O.A.unsafe_set d.values x.i (e::tl)
-  | _ -> () 
-
-let remove d x =
-  match (O.A.unsafe_get d.values x.i) with
-  | _::tl -> O.A.unsafe_set d.values x.i tl
-  | _ -> ()
-
-(*
-let add d x = O.add d.values x.i
-let remove d x = O.remove d.values x.i
-let replace d x = O.replace d.values x.i
-*)
-
-let symbols d = hvalues d.symbols
-
-let copy e =
-  { id = e.id ;
-    e_name = e.e_name ;
-    symbols = (S.copy (e.symbols)) ; 
-    values = (O.copy (e.values));
-    chain = e.chain }
+let symbols d = hvalues d.pkg.symbols
 
 let sanity_check e i =
-  if i < O.size (e.values) then ()
+  if i < Array.length (e.values) then ()
   else failwith "the value table needs to be resized"
 
-let fresh = let cpt = ref (-1) in fun () -> incr cpt; !cpt
+let fresh = 
+  let cpt = ref (-1) in 
+  fun () -> incr cpt; !cpt
 
-let symbol e s =
-  let s_tbl = e.symbols
-  and sc = env_id e in
-  let chain = (ref e)::(e.chain) in
-  let rec loc_symb = function
-    | [] ->
-        let id = fresh () in sanity_check e id;
-        let ns = {name = s ; i = id ; scope = sc} in
-        S.add s_tbl (sc,s) ns;
-        ns
-    | e::tl -> 
-        try 
-          let env = !e in
-          S.find (env.symbols) (env.id, s) 
-        with Not_found -> loc_symb tl in
-  loc_symb chain
+let rec loc_symb e s f =
+if f == f.dummy then
+  begin
+    let sc = e.pkg.id in
+    let id = fresh () in sanity_check e id;
+    let ns = {name = s ; i = id ; scope = sc} in
+    S.add e.pkg.symbols (sc,s) ns;
+    ns
+  end
+else
+    try S.find (f.symbols) (f.id, s) 
+    with Not_found -> loc_symb e s f.father 
+
+let symbol e s = loc_symb e s e.pkg

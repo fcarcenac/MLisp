@@ -4,47 +4,13 @@ exception EmptyList;;
 
 let always = function Some x -> x | _ -> raise IncompatibleArgument
 
-(** {4 fold} *)
-(** 
-{b Purpose} 
-
-This function applies a function to all the elements of a list
-
-{b Arguments}
-- [f]: the function which has to be applied to the elements of the list
-- [l]: the list over which iteration is performed
-- [accum]: the initial value of the accumulator
-
-*)
 let fold f l accum =
   let rec iter_list f l accum =
     match l with
       | e::tl -> iter_list f tl (f e accum)
       | [] -> accum in
   iter_list f l accum;;
-  
-(** {4 length} *)
-(** {b Purpose} 
 
-This function computes the length of a list 
-
-{b Arguments}
-- [l]: the list of which {e length} is computed
-
-*)
-(*
-let length l = fold (fun _ s -> s + 1) l 0;;
-*)
-
-(** {4 reverse} *)
-(** {b Purpose} 
-
-This function reverses the content of a list 
-
-{b Arguments}
-- [l]: the list which has to be reversed
-
-*)
 let reverse l = fold (fun x l -> x::l) l [];;
 
 let tail l =
@@ -52,4 +18,19 @@ let tail l =
     [] -> raise EmptyList
     | _ :: tl -> tl;;
 
-let ssplit sep = Str.split (Str.regexp sep)
+let split sep s =
+  let len = String.length s in
+  let cons i j acc =
+    if i < j 
+    then String.sub s i (j -i) :: acc
+    else acc
+  in
+  let rec split_aux i j =
+    if len <= j
+    then cons i j []
+    else
+      if s.[j] == sep
+      then cons i j (split_aux (succ j) (succ j))
+      else split_aux i (succ j)
+  in
+  split_aux 0 0
