@@ -7,7 +7,11 @@ val fold : ('a -> 'b -> 'b) -> 'a list -> 'b -> 'b
 
 val reverse : 'a list -> 'a list
 
-val tail : 'a list -> 'a list
+val map : ('a -> 'b) -> 'a list -> 'b list
+
+val iter : ('a -> unit) -> 'a list -> unit
+
+(*val tail : 'a list -> 'a list*)
 
 (*val ssplit : string -> string -> string list*)
 

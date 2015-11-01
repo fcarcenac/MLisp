@@ -7,16 +7,24 @@ let always = function Some x -> x | _ -> raise IncompatibleArgument
 let fold f l accum =
   let rec iter_list f l accum =
     match l with
-      | e::tl -> iter_list f tl (f e accum)
-      | [] -> accum in
+    | [] -> accum
+    | x :: tl -> iter_list f tl (f x accum) in
   iter_list f l accum;;
 
-let reverse l = fold (fun x l -> x::l) l [];;
+let reverse l = fold (fun x l -> x :: l) l [];;
 
-let tail l =
+let rec iter f = function
+  | [] -> ()
+  | x :: tl -> f x ; iter f tl
+
+let rec map f = function 
+  | [] -> []
+  | x :: l -> (f x) :: (map f l)
+
+(*let tail l =
   match l with
-    [] -> raise EmptyList
-    | _ :: tl -> tl;;
+  | [] -> raise EmptyList
+  | _ :: tl -> tl;;*)
 
 let split sep s =
   let len = String.length s in
