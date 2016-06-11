@@ -27,7 +27,7 @@ OCAMLYACC=ocamlyacc
 
 INCLUDES=-I $(OBJ_DIR) -I $(OCAML_LIB_DIR) # all relevant -I options here
 OCAMLFLAGS= $(INCLUDES) # add other options for ocamlc here
-OCAMLOPTFLAGS= -w Ae $(INCLUDES) -inline 10 -unsafe -noassert -fno-PIC -nodynlink # add other options for ocamlopt here
+OCAMLOPTFLAGS= -w Ae $(INCLUDES) -O3 -unsafe -noassert -fno-PIC -nodynlink # add other options for ocamlopt here
 OCAMLOPTLINK=$(OCAMLOPTFLAGS)
 
 SOURCES =\
