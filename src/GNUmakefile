@@ -25,7 +25,7 @@ OCAMLDEP=ocamldep
 OCAMLLEX=$(shell if [ `which ocamllex.opt` ] ; then echo ocamllex.opt ; else echo ocamllex; fi)
 OCAMLYACC=ocamlyacc
 
-INCLUDES=-I $(OBJ_DIR) -I $(OCAML_LIB_DIR) # all relevant -I options here
+INCLUDES=-I $(OBJ_DIR) # all relevant -I options here
 OCAMLFLAGS= $(INCLUDES) # add other options for ocamlc here
 OCAMLOPTFLAGS= -w Ae $(INCLUDES) -inline 10 -unsafe -noassert # add other options for ocamlopt here
 OCAMLOPTLINK=$(OCAMLOPTFLAGS)
